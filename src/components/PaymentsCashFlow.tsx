@@ -1,19 +1,22 @@
 
 import React, { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { Payment, ProjectData, IncomeItem } from '@/types/project';
-import { Upload, Plus, Trash2, TrendingUp, TrendingDown, CalendarIcon, Pencil, Check, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { CashFlowAnalysis } from '@/components/CashFlowAnalysis';
-import { format } from 'date-fns';
-import { cn } from '@/lib/utils';
+import { CsvImport } from '@/components/payments/CsvImport';
+import { ManualPaymentEntry } from '@/components/payments/ManualPaymentEntry';
+import { ManualReturnEntry } from '@/components/payments/ManualReturnEntry';
+import { PaymentsTable } from '@/components/payments/PaymentsTable';
+import { ReturnsTable } from '@/components/payments/ReturnsTable';
+import { 
+  formatCurrency, 
+  formatNumber, 
+  parseCurrencyAmount, 
+  parseDate, 
+  monthToDate, 
+  dateToMonth 
+} from '@/components/payments/utils';
 
 interface PaymentsCashFlowProps {
   projectData: ProjectData;
@@ -34,87 +37,6 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
   const [newPayment, setNewPayment] = useState<Partial<Payment>>({});
   const [newReturn, setNewReturn] = useState<Partial<IncomeItem>>({});
   const { toast } = useToast();
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('en-IN').format(value);
-  };
-
-  const parseCurrencyAmount = (amountStr: string): number => {
-    const cleanAmount = amountStr.replace(/[₹,\s]/g, '').replace(/[^\d.-]/g, '');
-    return parseFloat(cleanAmount) || 0;
-  };
-
-  const parseDate = (dateStr: string): number => {
-    if (!isNaN(Number(dateStr))) {
-      return Number(dateStr);
-    }
-    
-    try {
-      if (dateStr.includes('-')) {
-        const [monthPart, yearPart] = dateStr.split('-');
-        let month: number;
-        let year: number;
-        
-        if (isNaN(Number(monthPart))) {
-          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          month = monthNames.findIndex(name => monthPart.toLowerCase().startsWith(name.toLowerCase())) + 1;
-          year = parseInt(yearPart);
-        } else {
-          year = parseInt(monthPart);
-          month = parseInt(yearPart);
-        }
-        
-        if (month && year) {
-          const baselineYear = 2024;
-          const baselineMonth = 1;
-          return (year - baselineYear) * 12 + (month - baselineMonth) + 1;
-        }
-      }
-      
-      const date = new Date(dateStr);
-      if (!isNaN(date.getTime())) {
-        const year = date.getFullYear();
-        const month = date.getMonth() + 1;
-        const baselineYear = 2024;
-        const baselineMonth = 1;
-        return (year - baselineYear) * 12 + (month - baselineMonth) + 1;
-      }
-    } catch (error) {
-      console.error('Date parsing error:', error);
-    }
-    
-    return 1;
-  };
-
-  const monthToDate = (month: number): Date => {
-    const baselineYear = 2024;
-    const baselineMonth = 1;
-    
-    const totalMonths = month - 1 + baselineMonth - 1;
-    const year = baselineYear + Math.floor(totalMonths / 12);
-    const monthNum = (totalMonths % 12) + 1;
-    
-    return new Date(year, monthNum - 1, 1);
-  };
-
-  const dateToMonth = (date: Date): number => {
-    const baselineYear = 2024;
-    const baselineMonth = 1;
-    
-    const year = date.getFullYear();
-    const month = date.getMonth() + 1;
-    
-    return (year - baselineYear) * 12 + (month - baselineMonth) + 1;
-  };
 
   const parseCsvData = (csvText: string, isReturns = false) => {
     try {
@@ -275,20 +197,6 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
     updateProjectData({ rentalIncome: updatedReturns });
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      saveEdit(editingReturn !== null);
-    }
-    if (e.key === 'Escape') {
-      cancelEdit();
-    }
-  };
-
-  const sortedPayments = [...projectData.payments].sort((a, b) => a.month - b.month);
-  const sortedReturns = [...projectData.rentalIncome].sort((a, b) => a.month - b.month);
-  const totalPayments = projectData.payments.reduce((sum, p) => sum + p.amount, 0);
-  const totalReturns = projectData.rentalIncome.reduce((sum, r) => sum + r.amount, 0);
-
   return (
     <div className="space-y-4 p-4">
       <Tabs defaultValue="payments" className="space-y-3">
@@ -298,414 +206,62 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         </TabsList>
 
         <TabsContent value="payments" className="space-y-3">
-          <div className="grid gap-3 lg:grid-cols-2">
-            <Card className="border-red-200">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <TrendingDown className="w-5 h-5 text-red-600" />
-                  Import Payments (CSV)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div>
-                  <Label htmlFor="csvData">Paste CSV Data</Label>
-                  <Textarea
-                    id="csvData"
-                    value={csvData}
-                    onChange={(e) => setCsvData(e.target.value)}
-                    placeholder="May-2025,₹1,460,461,On Booking
-Jun-2025,₹2,920,922,On Agreement"
-                    rows={3}
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Format: Date (May-2025), Amount (₹1,460,461), Description
-                  </p>
-                </div>
-                <Button 
-                  onClick={() => parseCsvData(csvData, false)} 
-                  disabled={!csvData.trim()}
-                  className="w-full bg-red-600 hover:bg-red-700"
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Import Payments
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card className="border-green-200">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-green-600" />
-                  Import Returns (CSV)
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div>
-                  <Label htmlFor="returnsCsvData">Paste CSV Data</Label>
-                  <Textarea
-                    id="returnsCsvData"
-                    value={returnsCsvData}
-                    onChange={(e) => setReturnsCsvData(e.target.value)}
-                    placeholder="Jun-2026,₹25,000,Monthly Rent
-Mar-2028,₹80,00,000,Property Sale"
-                    rows={3}
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Format: Date (Jun-2026), Amount (₹25,000), Description
-                  </p>
-                </div>
-                <Button 
-                  onClick={() => parseCsvData(returnsCsvData, true)} 
-                  disabled={!returnsCsvData.trim()}
-                  className="w-full bg-green-600 hover:bg-green-700"
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Import Returns
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+          <CsvImport
+            csvData={csvData}
+            setCsvData={setCsvData}
+            returnsCsvData={returnsCsvData}
+            setReturnsCsvData={setReturnsCsvData}
+            onImportPayments={() => parseCsvData(csvData, false)}
+            onImportReturns={() => parseCsvData(returnsCsvData, true)}
+          />
 
           <div className="grid gap-3 lg:grid-cols-2">
-            <Card className="border-blue-200">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-blue-600" />
-                  Add New Payment
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div>
-                  <Label>Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !newPayment.month && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {newPayment.month ? format(monthToDate(newPayment.month), "MMM yyyy") : "Pick date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={newPayment.month ? monthToDate(newPayment.month) : undefined}
-                        onSelect={(date) => date && setNewPayment(prev => ({ ...prev, month: dateToMonth(date) }))}
-                        className="pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div>
-                  <Label>Amount (₹)</Label>
-                  <Input
-                    type="number"
-                    value={newPayment.amount || ''}
-                    onChange={(e) => setNewPayment(prev => ({ ...prev, amount: Number(e.target.value) }))}
-                    placeholder="Enter amount"
-                  />
-                </div>
-                <div>
-                  <Label>Description</Label>
-                  <Input
-                    value={newPayment.description || ''}
-                    onChange={(e) => setNewPayment(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Payment description"
-                  />
-                </div>
-                <Button onClick={saveNewPayment} className="w-full bg-blue-600 hover:bg-blue-700">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Save Payment
-                </Button>
-              </CardContent>
-            </Card>
+            <ManualPaymentEntry
+              newPayment={newPayment}
+              setNewPayment={setNewPayment}
+              onSave={saveNewPayment}
+              monthToDate={monthToDate}
+              dateToMonth={dateToMonth}
+            />
 
-            <Card className="border-blue-200">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-blue-600" />
-                  Add New Return
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div>
-                  <Label>Date</Label>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "w-full justify-start text-left font-normal",
-                          !newReturn.month && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {newReturn.month ? format(monthToDate(newReturn.month), "MMM yyyy") : "Pick date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={newReturn.month ? monthToDate(newReturn.month) : undefined}
-                        onSelect={(date) => date && setNewReturn(prev => ({ ...prev, month: dateToMonth(date) }))}
-                        className="pointer-events-auto"
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                <div>
-                  <Label>Amount (₹)</Label>
-                  <Input
-                    type="number"
-                    value={newReturn.amount || ''}
-                    onChange={(e) => setNewReturn(prev => ({ ...prev, amount: Number(e.target.value) }))}
-                    placeholder="Enter amount"
-                  />
-                </div>
-                <Button onClick={saveNewReturn} className="w-full bg-blue-600 hover:bg-blue-700">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Save Return
-                </Button>
-              </CardContent>
-            </Card>
+            <ManualReturnEntry
+              newReturn={newReturn}
+              setNewReturn={setNewReturn}
+              onSave={saveNewReturn}
+              monthToDate={monthToDate}
+              dateToMonth={dateToMonth}
+            />
           </div>
 
-          {projectData.payments.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center justify-between">
-                  <span>Payment Schedule ({projectData.payments.length} payments)</span>
-                  <span className="text-lg font-bold text-red-600">
-                    Total: {formatCurrency(totalPayments)}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="border-b bg-gray-50">
-                      <tr>
-                        <th className="text-left p-2 font-medium">Date</th>
-                        <th className="text-left p-2 font-medium">Amount (₹)</th>
-                        <th className="text-left p-2 font-medium">Description</th>
-                        <th className="text-center p-2 font-medium">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedPayments.map((payment, index) => (
-                        <tr key={payment.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
-                          <td className="p-1">
-                            {editingPayment === payment.id ? (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button variant="outline" className="w-full justify-start text-left font-normal text-sm h-8">
-                                    <CalendarIcon className="mr-2 h-3 w-3" />
-                                    {format(monthToDate(editValues.month), "MMM yyyy")}
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
-                                  <Calendar
-                                    mode="single"
-                                    selected={monthToDate(editValues.month)}
-                                    onSelect={(date) => date && setEditValues(prev => ({ ...prev, month: dateToMonth(date) }))}
-                                    className="pointer-events-auto"
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                            ) : (
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm">{format(monthToDate(payment.month), "MMM yyyy")}</span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => startEditPayment(payment.id, payment)}
-                                  className="p-1 h-6 w-6"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-1">
-                            {editingPayment === payment.id ? (
-                              <Input
-                                type="number"
-                                value={editValues.amount || ''}
-                                onChange={(e) => setEditValues(prev => ({ ...prev, amount: Number(e.target.value) }))}
-                                onKeyDown={handleKeyPress}
-                                className="w-full h-8 text-sm"
-                                autoFocus
-                              />
-                            ) : (
-                              <span className="text-sm">{formatNumber(payment.amount)}</span>
-                            )}
-                          </td>
-                          <td className="p-1">
-                            {editingPayment === payment.id ? (
-                              <Input
-                                value={editValues.description || ''}
-                                onChange={(e) => setEditValues(prev => ({ ...prev, description: e.target.value }))}
-                                onKeyDown={handleKeyPress}
-                                className="w-full h-8 text-sm"
-                              />
-                            ) : (
-                              <span className="text-sm">{payment.description}</span>
-                            )}
-                          </td>
-                          <td className="p-1 text-center">
-                            {editingPayment === payment.id ? (
-                              <div className="flex items-center justify-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => saveEdit(false)}
-                                  className="p-1 h-6 w-6 text-green-600"
-                                >
-                                  <Check className="w-3 h-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={cancelEdit}
-                                  className="p-1 h-6 w-6 text-red-600"
-                                >
-                                  <X className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removePayment(payment.id)}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 h-6 w-6"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <PaymentsTable
+            payments={projectData.payments}
+            editingPayment={editingPayment}
+            editValues={editValues}
+            onStartEdit={startEditPayment}
+            onSaveEdit={() => saveEdit(false)}
+            onCancelEdit={cancelEdit}
+            onRemove={removePayment}
+            setEditValues={setEditValues}
+            formatCurrency={formatCurrency}
+            formatNumber={formatNumber}
+            monthToDate={monthToDate}
+            dateToMonth={dateToMonth}
+          />
 
-          {projectData.rentalIncome.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center justify-between">
-                  <span>Returns Schedule ({projectData.rentalIncome.length} returns)</span>
-                  <span className="text-lg font-bold text-green-600">
-                    Total: {formatCurrency(totalReturns)}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="border-b bg-gray-50">
-                      <tr>
-                        <th className="text-left p-2 font-medium">Date</th>
-                        <th className="text-left p-2 font-medium">Amount (₹)</th>
-                        <th className="text-center p-2 font-medium">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedReturns.map((returnItem, index) => (
-                        <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
-                          <td className="p-1">
-                            {editingReturn === index ? (
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button variant="outline" className="w-full justify-start text-left font-normal text-sm h-8">
-                                    <CalendarIcon className="mr-2 h-3 w-3" />
-                                    {format(monthToDate(editValues.month), "MMM yyyy")}
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
-                                  <Calendar
-                                    mode="single"
-                                    selected={monthToDate(editValues.month)}
-                                    onSelect={(date) => date && setEditValues(prev => ({ ...prev, month: dateToMonth(date) }))}
-                                    className="pointer-events-auto"
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                            ) : (
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm">{format(monthToDate(returnItem.month), "MMM yyyy")}</span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => startEditReturn(index, returnItem)}
-                                  className="p-1 h-6 w-6"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            )}
-                          </td>
-                          <td className="p-1">
-                            {editingReturn === index ? (
-                              <Input
-                                type="number"
-                                value={editValues.amount || ''}
-                                onChange={(e) => setEditValues(prev => ({ ...prev, amount: Number(e.target.value) }))}
-                                onKeyDown={handleKeyPress}
-                                className="w-full h-8 text-sm"
-                                autoFocus
-                              />
-                            ) : (
-                              <span className="text-sm">{formatNumber(returnItem.amount)}</span>
-                            )}
-                          </td>
-                          <td className="p-1 text-center">
-                            {editingReturn === index ? (
-                              <div className="flex items-center justify-center gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => saveEdit(true)}
-                                  className="p-1 h-6 w-6 text-green-600"
-                                >
-                                  <Check className="w-3 h-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={cancelEdit}
-                                  className="p-1 h-6 w-6 text-red-600"
-                                >
-                                  <X className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeReturn(index)}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 h-6 w-6"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <ReturnsTable
+            returns={projectData.rentalIncome}
+            editingReturn={editingReturn}
+            editValues={editValues}
+            onStartEdit={startEditReturn}
+            onSaveEdit={() => saveEdit(true)}
+            onCancelEdit={cancelEdit}
+            onRemove={removeReturn}
+            setEditValues={setEditValues}
+            formatCurrency={formatCurrency}
+            formatNumber={formatNumber}
+            monthToDate={monthToDate}
+            dateToMonth={dateToMonth}
+          />
         </TabsContent>
 
         <TabsContent value="cashflow">
