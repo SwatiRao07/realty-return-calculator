@@ -17,65 +17,91 @@ export const parseCurrencyAmount = (amountStr: string): number => {
 };
 
 export const parseDate = (dateStr: string): number => {
+  // If it's already a number, return it
   if (!isNaN(Number(dateStr))) {
     return Number(dateStr);
   }
   
   try {
+    // Handle MMM-YYYY or Month-YYYY format (e.g., "May-2025" or "May-2025")
     if (dateStr.includes('-')) {
       const [monthPart, yearPart] = dateStr.split('-');
-      let month: number;
-      let year: number;
+      let month: number = 0;
+      const year = parseInt(yearPart.trim());
       
-      if (isNaN(Number(monthPart))) {
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                           'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        month = monthNames.findIndex(name => monthPart.toLowerCase().startsWith(name.toLowerCase())) + 1;
-        year = parseInt(yearPart);
+      // Define month names and their variations
+      const monthVariations = [
+        ['january', 'jan'],
+        ['february', 'feb'],
+        ['march', 'mar'],
+        ['april', 'apr'],
+        ['may'],
+        ['june', 'jun'],
+        ['july', 'jul'],
+        ['august', 'aug'],
+        ['september', 'sep'],
+        ['october', 'oct'],
+        ['november', 'nov'],
+        ['december', 'dec']
+      ];
+      
+      // Try to match the month part with known variations
+      const monthLower = monthPart.trim().toLowerCase();
+      const monthIndex = monthVariations.findIndex(variations => 
+        variations.some(v => monthLower.startsWith(v))
+      );
+      
+      if (monthIndex >= 0) {
+        month = monthIndex + 1;
       } else {
-        year = parseInt(monthPart);
-        month = parseInt(yearPart);
+        // Try to parse as month number if text parsing fails
+        const monthNum = parseInt(monthPart.trim());
+        if (!isNaN(monthNum) && monthNum >= 1 && monthNum <= 12) {
+          month = monthNum;
+        }
       }
       
-      if (month && year) {
-        const baselineYear = 2024;
-        const baselineMonth = 1;
-        return (year - baselineYear) * 12 + (month - baselineMonth) + 1;
+      if (month >= 1 && month <= 12 && !isNaN(year)) {
+        // Calculate the actual month number based on the date
+        // Month is 0-indexed in JavaScript Date
+        const baseDate = new Date(year, month - 1, 1);
+        return (baseDate.getFullYear() * 12) + baseDate.getMonth() + 1;
       }
     }
     
+    // Fallback to Date parsing for other formats
     const date = new Date(dateStr);
     if (!isNaN(date.getTime())) {
       const year = date.getFullYear();
       const month = date.getMonth() + 1;
       const baselineYear = 2024;
       const baselineMonth = 1;
-      return (year - baselineYear) * 12 + (month - baselineMonth) + 1;
+      const monthNumber = (year - baselineYear) * 12 + (month - baselineMonth) + 1;
+      console.log(`Parsed date (fallback): ${dateStr} -> ${month}/${year} (${monthNumber})`);
+      return monthNumber;
     }
+    
+    // If we get here, we couldn't parse the date
+    console.warn(`Could not parse date: ${dateStr}`);
+    return 1;
   } catch (error) {
-    console.error('Date parsing error:', error);
+    console.error('Date parsing error:', error, 'for date:', dateStr);
+    return 1;
   }
-  
-  return 1;
 };
 
 export const monthToDate = (month: number): Date => {
-  const baselineYear = 2024;
-  const baselineMonth = 1;
+  // Simple direct calculation: month 0 = Jan 2024
+  const year = 2024 + Math.floor(month / 12);
+  const monthIndex = month % 12;
   
-  const totalMonths = month - 1 + baselineMonth - 1;
-  const year = baselineYear + Math.floor(totalMonths / 12);
-  const monthNum = (totalMonths % 12) + 1;
-  
-  return new Date(year, monthNum - 1, 1);
+  return new Date(year, monthIndex, 1);
 };
 
 export const dateToMonth = (date: Date): number => {
-  const baselineYear = 2024;
-  const baselineMonth = 1;
-  
+  // Simple direct conversion: Jan 2024 = month 0
   const year = date.getFullYear();
-  const month = date.getMonth() + 1;
+  const month = date.getMonth(); // 0-based month index
   
-  return (year - baselineYear) * 12 + (month - baselineMonth) + 1;
+  return (year - 2024) * 12 + month;
 };

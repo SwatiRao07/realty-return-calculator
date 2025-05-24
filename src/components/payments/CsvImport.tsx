@@ -4,94 +4,59 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Upload, TrendingUp, TrendingDown } from 'lucide-react';
+import { Upload, ArrowUpDown } from 'lucide-react';
 
 interface CsvImportProps {
   csvData: string;
   setCsvData: (data: string) => void;
-  returnsCsvData: string;
-  setReturnsCsvData: (data: string) => void;
-  onImportPayments: () => void;
-  onImportReturns: () => void;
+  onImportCashFlow: () => void;
 }
 
 export const CsvImport: React.FC<CsvImportProps> = ({
   csvData,
   setCsvData,
-  returnsCsvData,
-  setReturnsCsvData,
-  onImportPayments,
-  onImportReturns
+  onImportCashFlow
 }) => {
   return (
-    <div className="grid gap-3 lg:grid-cols-2">
-      <Card className="border-red-200">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <TrendingDown className="w-5 h-5 text-red-600" />
-            Import Payments (CSV)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div>
-            <Label htmlFor="csvData">Paste CSV Data</Label>
-            <Textarea
-              id="csvData"
-              value={csvData}
-              onChange={(e) => setCsvData(e.target.value)}
-              placeholder="May-2025,₹1,460,461,On Booking
-Jun-2025,₹2,920,922,On Agreement"
-              rows={3}
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Format: Date (May-2025), Amount (₹1,460,461), Description
-            </p>
+    <Card className="border-blue-200 shadow-sm">
+      <CardHeader className="pb-1 pt-3 px-4">
+        <CardTitle className="text-sm font-medium flex items-center gap-1.5">
+          <ArrowUpDown className="w-4 h-4 text-blue-600" />
+          Import Cash Flow
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 p-4 pt-2">
+        <div>
+          <Textarea
+            id="csvData"
+            value={csvData}
+            onChange={(e) => setCsvData(e.target.value)}
+            placeholder="May-2025,-₹1,460,461,On Booking (payment)
+Jun-2026,₹25,000,Monthly Rent (return)"
+            rows={3}
+            className="font-mono text-xs mb-1 focus:border-blue-300"
+          />
+          <div className="text-xs text-gray-500 mb-2 flex items-center">
+            <span className="text-blue-500 mr-1">ⓘ</span> 
+            <span>Negative amounts = payments, positive = returns</span>
           </div>
+        </div>
+        <div className="flex justify-end">
           <Button 
-            onClick={onImportPayments} 
+            onClick={(e) => {
+              e.preventDefault();
+              onImportCashFlow();
+            }} 
             disabled={!csvData.trim()}
-            className="w-full bg-red-600 hover:bg-red-700"
+            size="sm"
+            className="bg-blue-600 hover:bg-blue-700 px-3 py-1 h-8"
+            type="button"
           >
-            <Upload className="w-4 h-4 mr-2" />
-            Import Payments
+            <Upload className="w-3.5 h-3.5 mr-1.5" />
+            Import
           </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="border-green-200">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-green-600" />
-            Import Returns (CSV)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <div>
-            <Label htmlFor="returnsCsvData">Paste CSV Data</Label>
-            <Textarea
-              id="returnsCsvData"
-              value={returnsCsvData}
-              onChange={(e) => setReturnsCsvData(e.target.value)}
-              placeholder="Jun-2026,₹25,000,Monthly Rent
-Mar-2028,₹80,00,000,Property Sale"
-              rows={3}
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Format: Date (Jun-2026), Amount (₹25,000), Description
-            </p>
-          </div>
-          <Button 
-            onClick={onImportReturns} 
-            disabled={!returnsCsvData.trim()}
-            className="w-full bg-green-600 hover:bg-green-700"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Import Returns
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };

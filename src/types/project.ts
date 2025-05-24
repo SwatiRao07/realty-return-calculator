@@ -5,12 +5,16 @@ export interface Payment {
   amount: number;
   description?: string;
   debtFunded?: boolean;
+  date?: Date | string;
+  type?: 'payment' | 'return';
 }
 
 export interface IncomeItem {
   month: number;
   amount: number;
   type: 'rental' | 'sale';
+  date?: string | Date;
+  description?: string;
 }
 
 export interface ExpenseItem {
@@ -21,14 +25,7 @@ export interface ExpenseItem {
 
 export interface ProjectData {
   projectName: string;
-  purchasePrice: number;
-  closingCosts: number;
-  renovationCosts: number;
-  salePrice: number;
-  saleMonth: number;
-  sellingCosts: number;
-  monthlyInterestRate: number;
-  discountRate: number;
+  annualInterestRate: number; // Annual interest rate as a percentage (e.g., 12 for 12%)
   payments: Payment[];
   rentalIncome: IncomeItem[];
   operatingExpenses: ExpenseItem[];

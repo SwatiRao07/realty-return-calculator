@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
+import { EnhancedCalendar } from '@/components/ui/enhanced-calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Payment } from '@/types/project';
-import { Trash2, CalendarIcon, Pencil, Check, X } from 'lucide-react';
+import { Trash2, CalendarIcon, Pencil, Check, X, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface PaymentsTableProps {
@@ -23,6 +23,11 @@ interface PaymentsTableProps {
   formatNumber: (value: number) => string;
   monthToDate: (month: number) => Date;
   dateToMonth: (date: Date) => number;
+  isAddingNew?: boolean;
+  newPayment?: Partial<Payment>;
+  setNewPayment?: (payment: Partial<Payment>) => void;
+  onSaveNew?: () => void;
+  onCancelNew?: () => void;
 }
 
 export const PaymentsTable: React.FC<PaymentsTableProps> = ({
@@ -36,9 +41,28 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
   setEditValues,
   formatCurrency,
   formatNumber,
-  monthToDate,
-  dateToMonth
+  monthToDate: propMonthToDate,
+  dateToMonth: propDateToMonth,
+  isAddingNew = false,
+  newPayment = {},
+  setNewPayment = () => {},
+  onSaveNew = () => {},
+  onCancelNew = () => {}
 }) => {
+  // Local implementations that can be overridden by props
+  const monthToDate = (month: number) => {
+    if (propMonthToDate) return propMonthToDate(month);
+    const date = new Date();
+    date.setMonth(month % 12);
+    date.setFullYear(Math.floor(month / 12));
+    return date;
+  };
+
+  const dateToMonth = (date: Date) => {
+    if (propDateToMonth) return propDateToMonth(date);
+    return date.getFullYear() * 12 + date.getMonth();
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       onSaveEdit();
@@ -48,63 +72,87 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
     }
   };
 
-  const sortedPayments = [...payments].sort((a, b) => a.month - b.month);
-  const totalPayments = payments.reduce((sum, p) => sum + p.amount, 0);
+  const totalPayments = payments.reduce((sum, p) => sum + (p.type === 'return' ? p.amount : -p.amount), 0);
+  const netCashFlow = payments.reduce((sum, p) => sum + (p.type === 'return' ? p.amount : -p.amount), 0);
 
-  if (payments.length === 0) return null;
+  if (payments.length === 0 && !isAddingNew) return null;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-center justify-between">
-          <span>Payment Schedule ({payments.length} payments)</span>
-          <span className="text-lg font-bold text-red-600">
-            Total: {formatCurrency(totalPayments)}
-          </span>
-        </CardTitle>
-      </CardHeader>
+    <Card className="shadow-sm border-gray-200">
       <CardContent className="p-0">
         <Table>
-          <TableHeader>
+<TableHeader className="bg-gray-50">
             <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Amount (₹)</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="text-center">Actions</TableHead>
+              <TableHead className="py-2 text-xs font-medium text-gray-500">Date</TableHead>
+              <TableHead className="py-2 text-xs font-medium text-gray-500">Amount (₹)</TableHead>
+              <TableHead className="py-2 text-xs font-medium text-gray-500">Type</TableHead>
+              <TableHead className="py-2 text-xs font-medium text-gray-500">Description</TableHead>
+              <TableHead className="py-2 text-xs font-medium text-gray-500 text-right w-24">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedPayments.map((payment, index) => (
+            {payments.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-4 text-center text-sm text-gray-500">
+                  No cash flow entries yet. Add your first entry to get started.
+                </TableCell>
+              </TableRow>
+            )}
+            {payments.map((payment, index) => (
               <TableRow key={payment.id}>
                 <TableCell className="p-1">
                   {editingPayment === payment.id ? (
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button variant="outline" className="w-full justify-start text-left font-normal text-sm h-8">
+                        <Button 
+                          variant="outline" 
+                          className="w-full justify-start text-left font-normal text-sm h-8"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <CalendarIcon className="mr-2 h-3 w-3" />
                           {format(monthToDate(editValues.month), "MMM yyyy")}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
+                      <PopoverContent 
+                        className="w-auto p-0" 
+                        align="start"
+                        onInteractOutside={(e) => e.preventDefault()}
+                      >
+                        <EnhancedCalendar
                           mode="single"
-                          selected={monthToDate(editValues.month)}
-                          onSelect={(date) => date && setEditValues(prev => ({ ...prev, month: dateToMonth(date) }))}
-                          className="pointer-events-auto"
+                          selected={editValues.date ? new Date(editValues.date) : monthToDate(editValues.month)}
+                          onSelect={(date) => {
+                            if (date) {
+                              setEditValues(prev => ({
+                                ...prev,
+                                date,
+                                month: dateToMonth(date)
+                              }));
+                              document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                            }
+                          }}
+                          className="rounded-md border"
+                          initialFocus
+                          yearRange={{ from: 2023, to: 2030 }}
                         />
+                        <div className="flex justify-end p-2 border-t">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            className="h-8"
+                          >
+                            Close
+                          </Button>
+                        </div>
                       </PopoverContent>
                     </Popover>
                   ) : (
                     <div className="flex items-center justify-between">
-                      <span className="text-sm">{format(monthToDate(payment.month), "MMM yyyy")}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onStartEdit(payment.id, payment)}
-                        className="p-1 h-6 w-6"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </Button>
+                      <span className="text-sm">
+                        {payment.date 
+                          ? format(new Date(payment.date), "MMM d, yyyy") 
+                          : format(monthToDate(payment.month), "MMM d, yyyy")}
+                      </span>
                     </div>
                   )}
                 </TableCell>
@@ -113,13 +161,31 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
                     <Input
                       type="number"
                       value={editValues.amount || ''}
-                      onChange={(e) => setEditValues(prev => ({ ...prev, amount: Number(e.target.value) }))}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, amount: Math.abs(Number(e.target.value)) }))}
                       onKeyDown={handleKeyPress}
                       className="w-full h-8 text-sm"
                       autoFocus
                     />
                   ) : (
-                    <span className="text-sm">{formatNumber(payment.amount)}</span>
+                    <span className={`text-sm ${payment.type === 'return' ? 'text-green-600' : 'text-red-600'}`}>
+                      {payment.type === 'return' ? '+' : '-'}{formatNumber(payment.amount)}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell className="p-1">
+                  {editingPayment === payment.id ? (
+                    <select 
+                      value={editValues.type || 'payment'}
+                      onChange={(e) => setEditValues(prev => ({ ...prev, type: e.target.value }))}
+                      className="w-full h-8 text-sm rounded-md border border-input px-3"
+                    >
+                      <option value="payment">Payment</option>
+                      <option value="return">Return</option>
+                    </select>
+                  ) : (
+                    <span className={`text-sm font-medium ${payment.type === 'return' ? 'text-green-600' : 'text-red-600'}`}>
+                      {payment.type === 'return' ? 'Return' : 'Payment'}
+                    </span>
                   )}
                 </TableCell>
                 <TableCell className="p-1">
@@ -134,39 +200,159 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
                     <span className="text-sm">{payment.description}</span>
                   )}
                 </TableCell>
-                <TableCell className="p-1 text-center">
+                <TableCell className="p-1 text-right">
                   {editingPayment === payment.id ? (
-                    <div className="flex items-center justify-center gap-1">
+                    <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={onSaveEdit}
-                        className="p-1 h-6 w-6 text-green-600"
+                        className="p-1 h-7 w-7 rounded-full bg-green-50 text-green-600 hover:bg-green-100"
                       >
-                        <Check className="w-3 h-3" />
+                        <Check className="w-3.5 h-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={onCancelEdit}
-                        className="p-1 h-6 w-6 text-red-600"
+                        className="p-1 h-7 w-7 rounded-full bg-red-50 text-red-600 hover:bg-red-100"
                       >
-                        <X className="w-3 h-3" />
+                        <X className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   ) : (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onRemove(payment.id)}
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50 p-1 h-6 w-6"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
+                    <div className="flex items-center justify-end space-x-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onStartEdit(payment.id, payment)}
+                        className="p-1 h-7 w-7 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100"
+                        title="Edit entry"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onRemove(payment.id)}
+                        className="p-1 h-7 w-7 rounded-full bg-red-50 text-red-600 hover:bg-red-100"
+                        title="Delete entry"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   )}
                 </TableCell>
               </TableRow>
             ))}
+            {isAddingNew && (
+              <TableRow className="bg-blue-50 border-t border-blue-100">
+                <TableCell className="p-1 pt-2">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button 
+                        variant="outline" 
+                        className="w-full justify-start text-left font-normal text-xs h-8 border-blue-200 bg-white"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <CalendarIcon className="mr-1.5 h-3 w-3 text-blue-500" />
+                        {newPayment.date ? format(new Date(newPayment.date), "MMM d, yyyy") : "Select date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent 
+                      className="w-auto p-0" 
+                      align="start"
+                      onInteractOutside={(e) => e.preventDefault()}
+                    >
+                      <EnhancedCalendar
+                        mode="single"
+                        selected={newPayment.date ? new Date(newPayment.date) : (newPayment.month ? monthToDate(newPayment.month) : new Date())}
+                        onSelect={(date) => {
+                          if (date) {
+                            setNewPayment({
+                              ...newPayment,
+                              date,
+                              month: dateToMonth(date)
+                            });
+                            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+                          }
+                        }}
+                        className="rounded-md border"
+                        initialFocus
+                        yearRange={{ from: 2023, to: 2030 }}
+                      />
+                      <div className="flex justify-end p-2 border-t">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="h-7 text-xs"
+                        >
+                          Close
+                        </Button>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </TableCell>
+                <TableCell className="p-1 pt-2">
+                  <Input
+                    type="number"
+                    value={newPayment.amount || ''}
+                    onChange={(e) => setNewPayment({
+                      ...newPayment,
+                      amount: Math.abs(Number(e.target.value))
+                    })}
+                    className="h-8 text-xs border-blue-200 bg-white"
+                    placeholder="Amount"
+                  />
+                </TableCell>
+                <TableCell className="p-1 pt-2">
+                  <select
+                    value={newPayment.type || 'payment'}
+                    onChange={(e) => setNewPayment({
+                      ...newPayment,
+                      type: e.target.value as 'payment' | 'return'
+                    })}
+                    className="w-full h-8 text-xs rounded-md border border-blue-200 px-2 bg-white"
+                  >
+                    <option value="payment">Payment</option>
+                    <option value="return">Return</option>
+                  </select>
+                </TableCell>
+                <TableCell className="p-1 pt-2">
+                  <Input
+                    value={newPayment.description || ''}
+                    onChange={(e) => setNewPayment({
+                      ...newPayment,
+                      description: e.target.value
+                    })}
+                    className="h-8 text-xs border-blue-200 bg-white"
+                    placeholder="Description"
+                  />
+                </TableCell>
+                <TableCell className="p-1 pt-2 text-right">
+                  <div className="flex items-center justify-end space-x-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onSaveNew}
+                      className="p-1 h-7 w-7 rounded-full bg-green-50 text-green-600 hover:bg-green-100"
+                      title="Save entry"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onCancelNew}
+                      className="p-1 h-7 w-7 rounded-full bg-red-50 text-red-600 hover:bg-red-100"
+                      title="Cancel"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </CardContent>

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PaymentsCashFlow } from '@/components/PaymentsCashFlow';
+import PaymentsCashFlow from '@/components/PaymentsCashFlow';
 import { FinancialMetrics } from '@/components/FinancialMetrics';
 import { ProjectData, Payment } from '@/types/project';
 import { TrendingUp, BarChart3 } from 'lucide-react';
@@ -10,14 +10,7 @@ import { TrendingUp, BarChart3 } from 'lucide-react';
 const Index = () => {
   const [projectData, setProjectData] = useState<ProjectData>({
     projectName: 'New Project',
-    purchasePrice: 5000000,
-    closingCosts: 100000,
-    renovationCosts: 1000000,
-    salePrice: 8000000,
-    saleMonth: 24,
-    sellingCosts: 200000,
-    monthlyInterestRate: 0.01,
-    discountRate: 0.12,
+    annualInterestRate: 12, // 12% annual interest rate
     payments: [],
     rentalIncome: [],
     operatingExpenses: []
@@ -44,41 +37,55 @@ const Index = () => {
           </p>
         </div>
 
-        <Tabs defaultValue="payments" className="space-y-6">
+        <Tabs defaultValue="cashflow" className="space-y-6">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="payments" className="flex items-center gap-2">
+            <TabsTrigger value="cashflow" className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              <span>Payments & Cash Flow</span>
+              <span>Cash Flow</span>
             </TabsTrigger>
-            <TabsTrigger value="metrics" className="flex items-center gap-2">
+            <TabsTrigger value="analysis" className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
-              <span>Metrics & Setup</span>
+              <span>Analysis & Setup</span>
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="payments">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-blue-600" />
-                  Payments & Cash Flow Analysis
-                </CardTitle>
-              </CardHeader>
+          <TabsContent value="cashflow">
+            <Card className="shadow-sm border-gray-200">
               <CardContent className="p-0">
                 <PaymentsCashFlow 
                   projectData={projectData}
                   updateProjectData={updateProjectData}
                   updatePayments={updatePayments}
+                  showOnlyCashFlow={true}
                 />
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="metrics">
-            <FinancialMetrics 
-              projectData={projectData} 
-              updateProjectData={updateProjectData}
-            />
+          <TabsContent value="analysis">
+            <div className="space-y-6">
+              <Card className="shadow-sm border-gray-200">
+                <CardHeader className="pb-2 px-4 pt-3">
+                  <CardTitle className="flex items-center text-base font-medium text-gray-700 gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-blue-600" />
+                    Cash Flow Analysis
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <PaymentsCashFlow 
+                    projectData={projectData}
+                    updateProjectData={updateProjectData}
+                    updatePayments={updatePayments}
+                    showOnlyAnalysis={true}
+                  />
+                </CardContent>
+              </Card>
+              
+              <FinancialMetrics 
+                projectData={projectData} 
+                updateProjectData={updateProjectData}
+              />
+            </div>
           </TabsContent>
         </Tabs>
       </div>

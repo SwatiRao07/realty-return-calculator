@@ -1,0 +1,205 @@
+import React, { useState, useMemo, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
+import { Payment, ProjectData, IncomeItem } from '@/types/project';
+import { useToast } from '@/hooks/use-toast';
+import { CashFlowAnalysis } from '@/components/CashFlowAnalysis';
+import { PaymentsTable } from '@/components/payments/PaymentsTable';
+import { format } from 'date-fns';
+import { Plus, ArrowUpDown, X, Upload, Copy } from 'lucide-react';
+import { 
+  formatCurrency, 
+  formatNumber, 
+  parseCurrencyAmount, 
+  parseDate, 
+  monthToDate, 
+  dateToMonth 
+} from '@/components/payments/utils';
+
+interface PaymentsCashFlowProps {
+  projectData: ProjectData;
+  updateProjectData: (updates: Partial<ProjectData>) => void;
+  updatePayments: (payments: Payment[]) => void;
+  showOnlyCashFlow?: boolean;
+  showOnlyAnalysis?: boolean;
+}
+
+interface CashFlowEntry {
+  id: string;
+  date: string | Date;
+  month: number;
+  amount: number;
+  description?: string;
+  type: 'payment' | 'return';
+  debtFunded?: boolean;
+}
+
+export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
+  projectData, 
+  updateProjectData, 
+  updatePayments,
+  showOnlyCashFlow = false,
+  showOnlyAnalysis = false
+}) => {
+  const [csvData, setCsvData] = useState('');
+  const [editingPayment, setEditingPayment] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<any>({});
+  const [isAddingNew, setIsAddingNew] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [newPayment, setNewPayment] = useState<Partial<Payment>>({
+    month: dateToMonth(new Date()),
+    amount: 0,
+    description: '',
+    date: new Date(),
+    type: 'payment',
+  });
+  const { toast } = useToast();
+
+  // Combine and sort all entries by date
+  const allEntries = useMemo<CashFlowEntry[]>(() => {
+    const paymentsWithType = projectData.payments.map(p => ({
+      ...p,
+      type: 'payment' as const,
+      date: p.date || monthToDate(p.month).toISOString()
+    }));
+
+    const returnsWithType = projectData.rentalIncome.map((r, i) => ({
+      ...r,
+      id: `return_${i}`,
+      type: 'return' as const,
+      date: r.date || monthToDate(r.month).toISOString()
+    }));
+
+    return [...paymentsWithType, ...returnsWithType].sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return dateA - dateB;
+    });
+  }, [projectData.payments, projectData.rentalIncome]);
+
+  const handleCopyCSV = useCallback(() => {
+    try {
+      // Create CSV header
+      const headers = ['Date', 'Type', 'Amount', 'Currency', 'Description'];
+      let csvContent = headers.join(',') + '\n';
+      
+      // Add all entries to CSV
+      allEntries.forEach(entry => {
+        try {
+          const date = entry.date ? new Date(entry.date) : monthToDate(entry.month);
+          const formattedDate = format(date, 'yyyy-MM-dd');
+          const type = entry.type === 'return' ? 'Return' : 'Payment';
+          
+          // Format amount as a clean number with 2 decimal places and no thousands separators
+          const amount = entry.amount.toFixed(2);
+          const currency = 'INR';
+          
+          // Escape any commas and quotes in description
+          const description = (entry.description || '').replace(/"/g, '""');
+          
+          // Create CSV row with proper escaping
+          const row = [
+            `"${formattedDate}"`,
+            `"${type}"`,
+            `"${amount}"`,
+            `"${currency}"`,
+            `"${description}"`
+          ].join(',');
+          
+          csvContent += row + '\n';
+        } catch (e) {
+          console.error('Error processing entry:', entry, e);
+        }
+      });
+      
+      // Copy to clipboard
+      navigator.clipboard.writeText(csvContent);
+      
+      toast({
+        title: 'CSV Copied',
+        description: 'Cash flow data has been copied to clipboard',
+      });
+    } catch (error) {
+      console.error('Error copying CSV:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to copy CSV to clipboard',
+        variant: 'destructive',
+      });
+    }
+  }, [allEntries, toast]);
+
+  // ... rest of the component code remains the same ...
+  
+  return (
+    <div className="space-y-4">
+      {/* Cash Flow View */}
+      {(showOnlyCashFlow || (!showOnlyCashFlow && !showOnlyAnalysis)) && (
+        <div className="space-y-3">
+          <div className="flex justify-end items-center px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => setIsImportOpen(true)}
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-700"
+              >
+                <ArrowUpDown className="h-3.5 w-3.5" />
+                Import CSV
+              </Button>
+              <Button
+                onClick={() => setIsAddingNew(true)}
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 bg-blue-50 border-blue-200 hover:bg-blue-100 hover:text-blue-700"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Entry
+              </Button>
+              <Button
+                onClick={handleCopyCSV}
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 bg-green-50 border-green-200 hover:bg-green-100 hover:text-green-700"
+                disabled={allEntries.length === 0}
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Copy CSV
+              </Button>
+            </div>
+          </div>
+
+          <PaymentsTable
+            payments={allEntries}
+            editingPayment={editingPayment}
+            editValues={editValues}
+            onEditChange={handleEditChange}
+            onSaveEdit={saveEdit}
+            onCancelEdit={cancelEdit}
+            onRemovePayment={removePayment}
+            isAddingNew={isAddingNew}
+            newPayment={newPayment}
+            onNewPaymentChange={handleNewPaymentChange}
+            onAddNewPayment={addNewPayment}
+            onCancelNewPayment={cancelNewPayment}
+          />
+        </div>
+      )}
+
+      {/* Analysis View */}
+      {(!showOnlyCashFlow && !showOnlyAnalysis) && (
+        <div className="mt-6">
+          <CashFlowAnalysis payments={projectData.payments} returns={projectData.rentalIncome} />
+        </div>
+      )}
+
+      {/* Analysis Only View */}
+      {showOnlyAnalysis && (
+        <CashFlowAnalysis payments={projectData.payments} returns={projectData.rentalIncome} />
+      )}
+    </div>
+  );
+};
+
+export default PaymentsCashFlow;
