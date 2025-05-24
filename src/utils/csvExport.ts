@@ -2,11 +2,11 @@ import { format } from 'date-fns';
 
 export interface CashFlowEntry {
   id: string;
-  date: string | Date;
+  date?: string | Date;
   month: number;
   amount: number;
   description?: string;
-  type: 'payment' | 'return';
+  type?: 'payment' | 'return' | 'interest';
   debtFunded?: boolean;
 }
 
@@ -32,7 +32,15 @@ export const exportToCsv = (entries: CashFlowEntry[]): string => {
     try {
       const date = entry.date ? new Date(entry.date) : monthToDate(entry.month);
       const formattedDate = format(date, 'yyyy-MM-dd');
-      const type = entry.type === 'return' ? 'Return' : 'Payment';
+      
+      let typeString = 'Payment'; // Default
+      if (entry.type === 'return') {
+        typeString = 'Return';
+      } else if (entry.type === 'interest') {
+        typeString = 'Interest';
+      } else if (entry.type === 'payment') {
+        typeString = 'Payment';
+      }
       
       // Clean up the description - remove any existing quotes and extra spaces
       let description = (entry.description || '').trim();
@@ -41,14 +49,14 @@ export const exportToCsv = (entries: CashFlowEntry[]): string => {
       // Remove any remaining quotes around values
       description = description.replace(/"([^"]+)"/g, '$1');
       
-      // Format amount - negative for payments, positive for returns
-      const amountValue = entry.type === 'payment' ? -Math.abs(entry.amount) : Math.abs(entry.amount);
+      // Format amount - negative for payments and interest, positive for returns
+      const amountValue = (entry.type === 'payment' || entry.type === 'interest') ? -Math.abs(entry.amount) : Math.abs(entry.amount);
       const amount = amountValue.toFixed(2);
       const currency = 'INR';
       
       const row = [
         escapeCsvField(formattedDate),
-        escapeCsvField(type),
+        escapeCsvField(typeString),
         escapeCsvField(amount),
         escapeCsvField(currency),
         escapeCsvField(description)

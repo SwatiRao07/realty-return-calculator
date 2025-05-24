@@ -1,15 +1,14 @@
-
 import React, { useState, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
-import { Payment, ProjectData, IncomeItem } from '@/types/project';
+import { Payment, IncomeItem, ProjectData } from '@/types/project';
 import { useToast } from '@/hooks/use-toast';
 import { CashFlowAnalysis } from '@/components/CashFlowAnalysis';
 import { PaymentsTable } from '@/components/payments/PaymentsTable';
-import { Plus, ArrowUpDown, X, Upload, Copy } from 'lucide-react';
+import { Plus, ArrowUpDown, X, Upload, Copy, Percent, Calculator } from 'lucide-react'; 
 import { exportToCsv } from '@/utils/csvExport';
-import { format } from 'date-fns';
+import { format, endOfMonth } from 'date-fns'; 
 import { 
   formatCurrency, 
   formatNumber, 
@@ -18,16 +17,8 @@ import {
   monthToDate, 
   dateToMonth 
 } from '@/components/payments/utils';
-
-interface CashFlowEntry {
-  id: string;
-  date: string | Date;
-  month: number;
-  amount: number;
-  description?: string;
-  type: 'payment' | 'return';
-  debtFunded?: boolean;
-}
+import { calculateMonthlyInterestLogic, CalculatedInterestResult } from '@/utils/interestCalculator'; 
+import { calculateDerivedProjectEndDate } from '@/utils/projectDateUtils'; 
 
 interface PaymentsCashFlowProps {
   projectData: ProjectData;
@@ -36,8 +27,6 @@ interface PaymentsCashFlowProps {
   showOnlyCashFlow?: boolean;
   showOnlyAnalysis?: boolean;
 }
-
-
 
 const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({ 
   projectData, 
@@ -51,42 +40,121 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
   const [editValues, setEditValues] = useState<any>({});
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [interestRate, setInterestRate] = useState<number>(projectData.annualInterestRate || 12); 
   const [newPayment, setNewPayment] = useState<Partial<Payment>>({
     month: dateToMonth(new Date()),
     amount: 0,
     description: '',
-    date: new Date(),
+    date: new Date(), 
     type: 'payment',
   });
   const { toast } = useToast();
 
-  // Combine and sort all entries by date
-  const allEntries = useMemo(() => {
-    const paymentsWithType = projectData.payments.map(p => ({
+  const [currentInterestDetails, setCurrentInterestDetails] = useState<CalculatedInterestResult | null>(null);
+
+  const projectEndDate = useMemo(() => {
+    const allNonInterestEntries = [
+      ...projectData.payments.map(p => ({ ...p, date: p.date ? new Date(p.date) : monthToDate(p.month) })),
+      ...projectData.rentalIncome.map(r => ({ ...r, date: r.date ? new Date(r.date) : monthToDate(r.month) }))
+    ];
+    return calculateDerivedProjectEndDate(allNonInterestEntries as Payment[]); 
+  }, [projectData.payments, projectData.rentalIncome]);
+
+  const handleCalculateInterest = useCallback(() => {
+    if (interestRate <= 0 && projectData.payments.length === 0) {
+      setCurrentInterestDetails({
+        newInterestPayments: [],
+        allPaymentsWithInterest: projectData.payments, 
+        finalBalance: 0
+      });
+      toast({
+        title: 'No Interest to Calculate',
+        description: 'Interest rate is 0 or no payments exist.',
+      });
+      return;
+    }
+    const result = calculateMonthlyInterestLogic({
+      payments: projectData.payments,
+      interestRate: interestRate,
+      projectEndDate: projectEndDate || undefined,
+    });
+    setCurrentInterestDetails(result);
+    if (result.error) {
+      toast({
+        title: 'Interest Calculation Error',
+        description: result.error,
+        variant: 'destructive',
+      });
+    } else {
+      toast({
+        title: 'Interest Calculated',
+        description: 'Interest details have been updated and are reflected in the table and analysis.',
+      });
+    }
+  }, [projectData.payments, interestRate, projectEndDate, toast]);
+
+  const allEntriesForTable: Payment[] = useMemo(() => {
+    const principalPaymentsMapped: Payment[] = projectData.payments.map((p: Payment): Payment => ({
       ...p,
-      type: 'payment' as const,
-      date: p.date || monthToDate(p.month).toISOString(),
-      amount: p.amount
+      id: p.id || `payment_${p.month}_${p.amount}_${Math.random()}`,
+      date: p.date ? (typeof p.date === 'string' ? p.date : new Date(p.date).toISOString()) : monthToDate(p.month).toISOString(),
+      type: p.type || 'payment',
     }));
 
-    const returnsWithType = projectData.rentalIncome.map((r, i) => ({
-      ...r,
-      id: `return_${i}`,
-      type: 'return' as const,
-      date: r.date || monthToDate(r.month).toISOString(),
-      amount: r.amount
+    const interestPaymentsMapped: Payment[] = currentInterestDetails?.newInterestPayments.map((p: Payment): Payment => ({
+      ...p,
+      date: p.date ? (typeof p.date === 'string' ? p.date : new Date(p.date).toISOString()) : monthToDate(p.month).toISOString(),
+    })) || [];
+
+    const returnsMapped: Payment[] = projectData.rentalIncome.map((r: IncomeItem, i: number): Payment => ({
+      id: r.id || `return_${i}_${r.month}_${r.amount}`,
+      month: r.month,
+      amount: r.amount,
+      description: r.description || (r.type === 'sale' ? 'Property Sale' : 'Rental Income'),
+      date: r.date ? (typeof r.date === 'string' ? r.date : new Date(r.date).toISOString()) : monthToDate(r.month).toISOString(),
+      type: 'return',
+      debtFunded: undefined,
     }));
 
-    return [...paymentsWithType, ...returnsWithType].sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      return dateA - dateB; // Sort in ascending order (oldest first)
+    return [...principalPaymentsMapped, ...interestPaymentsMapped, ...returnsMapped].sort((a, b) => {
+      const dateA = new Date(a.date as string).getTime();
+      const dateB = new Date(b.date as string).getTime();
+      if (dateA === dateB) {
+        const typeOrder = { payment: 1, interest: 2, return: 3 };
+        return (typeOrder[a.type as keyof typeof typeOrder] || 99) - (typeOrder[b.type as keyof typeof typeOrder] || 99);
+      }
+      return dateA - dateB;
+    });
+  }, [projectData.payments, projectData.rentalIncome, currentInterestDetails?.newInterestPayments]);
+
+  const allEntriesForCSV: Payment[] = useMemo(() => {
+    const paymentsMapped: Payment[] = projectData.payments.map((p: Payment): Payment => ({
+      ...p,
+      id: p.id || `payment_${p.month}_${p.amount}_${Math.random()}`,
+      date: p.date ? (typeof p.date === 'string' ? p.date : new Date(p.date).toISOString()) : monthToDate(p.month).toISOString(),
+      type: p.type || 'payment', 
+    }));
+
+    const returnsMapped: Payment[] = projectData.rentalIncome.map((r: IncomeItem, i: number): Payment => ({
+      id: r.id || `return_${i}_${r.month}_${r.amount}`,
+      month: r.month,
+      amount: r.amount,
+      description: r.description || (r.type === 'sale' ? 'Property Sale' : 'Rental Income'),
+      date: r.date ? (typeof r.date === 'string' ? r.date : new Date(r.date).toISOString()) : monthToDate(r.month).toISOString(),
+      type: 'return',
+      debtFunded: undefined, 
+    }));
+
+    return [...paymentsMapped, ...returnsMapped].sort((a, b) => {
+      const dateA = new Date(a.date as string).getTime();
+      const dateB = new Date(b.date as string).getTime();
+      return dateA - dateB;
     });
   }, [projectData.payments, projectData.rentalIncome]);
 
   const handleCopyCSV = useCallback(async () => {
     try {
-      const csvContent = exportToCsv(allEntries);
+      const csvContent = exportToCsv(allEntriesForTable); 
       await navigator.clipboard.writeText(csvContent);
       
       toast({
@@ -101,11 +169,10 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         variant: 'destructive',
       });
     }
-  }, [allEntries, toast]);
+  }, [allEntriesForTable, toast]);
 
   const parseCashFlowData = (csvText: string) => {
     try {
-      // Check if the first line contains headers and skip it if needed
       const lines = csvText.trim().split('\n');
       const hasHeader = lines[0].toLowerCase().includes('date') && 
                       lines[0].toLowerCase().includes('amount') && 
@@ -116,10 +183,10 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
       const newReturns: IncomeItem[] = [];
 
       dataLines.forEach((line, index) => {
-        if (!line.trim()) return; // Skip empty lines
+        if (!line.trim()) return; 
         
         const parts = line.split(',').map(part => part.trim());
-        if (parts.length < 2) return; // At least need date and amount
+        if (parts.length < 2) return; 
         
         const dateOrMonth = parts[0];
         const amount = parts[1];
@@ -136,7 +203,6 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
           const dateString = date.toISOString();
           
           if (amountValue < 0) {
-            // Negative amount means it's a payment
             newPayments.push({
               id: Math.random().toString(36).substr(2, 9),
               month: month,
@@ -147,7 +213,6 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
               type: 'payment' as const
             });
           } else {
-            // Positive amount means it's a return
             newReturns.push({
               month: month,
               amount: amountValue,
@@ -171,6 +236,7 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         updateProjectData({ 
           rentalIncome: [...projectData.rentalIncome, ...newReturns] 
         });
+        setCurrentInterestDetails(null); // Clear existing interest
         setCsvData('');
 
         toast({
@@ -199,17 +265,15 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
     setEditValues(payment);
   };
 
-  // Handle both types of entries in the PaymentsTable
   const saveEdit = () => {
     if (editingPayment) {
       if (editingPayment.startsWith('return_')) {
-        // Editing an existing return
         const returnIndex = parseInt(editingPayment.split('_')[1]);
         if (!isNaN(returnIndex) && returnIndex >= 0 && returnIndex < projectData.rentalIncome.length) {
           const updatedReturns = [...projectData.rentalIncome];
           updatedReturns[returnIndex] = {
             month: editValues.month,
-            amount: Math.abs(Number(editValues.amount)), // Ensure positive amount
+            amount: Math.abs(Number(editValues.amount)), 
             type: 'rental' as const,
             date: editValues.date,
             description: editValues.description
@@ -217,10 +281,9 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
           updateProjectData({ rentalIncome: updatedReturns });
         }
       } else if (editValues.type === 'return') {
-        // Convert a payment to a return and add it to rentalIncome
         const newReturn: IncomeItem = {
           month: editValues.month,
-          amount: Math.abs(Number(editValues.amount)), // Ensure positive amount
+          amount: Math.abs(Number(editValues.amount)), 
           type: 'rental' as const,
           date: editValues.date,
           description: editValues.description
@@ -228,29 +291,25 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         const updatedReturns = [...projectData.rentalIncome, newReturn];
         updateProjectData({ rentalIncome: updatedReturns });
         
-        // Remove the payment from payments if it exists
         if (editingPayment !== 'new') {
           updatePayments(projectData.payments.filter(payment => payment.id !== editingPayment));
         }
       } else {
-        // Just update the payment
         const updatedPayments = projectData.payments.map(payment => 
           payment.id === editingPayment ? { 
             ...editValues, 
             id: editingPayment,
-            amount: Math.abs(Number(editValues.amount)) // Ensure positive amount
+            amount: Math.abs(Number(editValues.amount)) 
           } : payment
         );
         updatePayments(updatedPayments);
       }
       setEditingPayment(null);
     } else if (editValues.id === 'new') {
-      // Handle new entry
       if (editValues.type === 'return') {
-        // Add as a return
         const newReturn: IncomeItem = {
           month: editValues.month,
-          amount: Math.abs(Number(editValues.amount)), // Ensure positive amount
+          amount: Math.abs(Number(editValues.amount)), 
           type: 'rental' as const,
           date: editValues.date,
           description: editValues.description
@@ -258,11 +317,10 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         const updatedReturns = [...projectData.rentalIncome, newReturn];
         updateProjectData({ rentalIncome: updatedReturns });
       } else {
-        // Add as a payment
         const newPayment: Payment = {
           ...editValues,
           id: Math.random().toString(36).substr(2, 9),
-          amount: Math.abs(Number(editValues.amount)) // Ensure positive amount
+          amount: Math.abs(Number(editValues.amount)) 
         };
         updatePayments([...projectData.payments, newPayment]);
       }
@@ -281,10 +339,9 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
       const month = dateToMonth(date);
       
       if (newPayment.type === 'return') {
-        // Add as a return
         const newReturn: IncomeItem = {
           month,
-          amount: Math.abs(Number(newPayment.amount)), // Ensure positive amount for returns
+          amount: Math.abs(Number(newPayment.amount)), 
           type: 'rental' as const,
           date: date.toISOString(),
           description: newPayment.description
@@ -293,7 +350,6 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
           rentalIncome: [...projectData.rentalIncome, newReturn] 
         });
       } else {
-        // Add as a payment
         const payment: Payment = {
           id: Math.random().toString(36).substr(2, 9),
           month,
@@ -306,7 +362,6 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         updatePayments([...projectData.payments, payment]);
       }
       
-      // Reset form and close it
       setNewPayment({
         month: dateToMonth(new Date()),
         amount: 0,
@@ -336,7 +391,6 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
 
   const removePayment = (id: string) => {
     if (id.startsWith('return_')) {
-      // Handle return deletion
       const returnIndex = parseInt(id.split('_')[1]);
       if (!isNaN(returnIndex) && returnIndex >= 0 && returnIndex < projectData.rentalIncome.length) {
         const updatedReturns = [...projectData.rentalIncome];
@@ -344,26 +398,19 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         updateProjectData({ rentalIncome: updatedReturns });
       }
     } else {
-      // Handle payment deletion
       updatePayments(projectData.payments.filter(payment => payment.id !== id));
     }
   };
 
-  // Add Dialog import at the top of the file
-  // import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-
   const handleExportCSV = useCallback(async () => {
     try {
-      // Prepare entries with proper dates
-      const entries = allEntries.map(entry => ({
+      const entries = allEntriesForTable.map(entry => ({
         ...entry,
         date: entry.date || monthToDate(entry.month).toISOString()
       }));
       
-      // Generate CSV content
       const csvContent = exportToCsv(entries);
       
-      // Try to use the modern clipboard API first
       if (navigator.clipboard && window.isSecureContext) {
         try {
           await navigator.clipboard.writeText(csvContent);
@@ -371,14 +418,12 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
             title: 'CSV Copied',
             description: 'Cash flow data has been copied to clipboard',
           });
-          return; // Success, exit the function
+          return; 
         } catch (clipboardError) {
           console.warn('Clipboard write failed, falling back to download:', clipboardError);
-          // Continue to fallback method
         }
       }
       
-      // Fallback: Create a download link
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -402,11 +447,10 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         variant: 'destructive',
       });
     }
-  }, [allEntries, toast]);
+  }, [allEntriesForTable, toast]);
 
   return (
     <div className="space-y-4">
-      {/* Cash Flow View */}
       {(showOnlyCashFlow || (!showOnlyCashFlow && !showOnlyAnalysis)) && (
         <div className="space-y-3">
           <div className="flex justify-end items-center px-4 py-3">
@@ -418,41 +462,40 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
                 className="h-8 gap-1 bg-green-50 border-green-200 hover:bg-green-100 text-green-700"
               >
                 <Copy className="h-3.5 w-3.5" />
-                Export CSV
+                Export CSV 
+              </Button>
+              <Button
+                onClick={handleCalculateInterest}
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 bg-purple-50 border-purple-200 hover:bg-purple-100 text-purple-700"
+              >
+                <Calculator className="h-3.5 w-3.5" />
+                Calculate Interest
               </Button>
               <Button
                 onClick={() => setIsImportOpen(true)}
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1 bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-700"
+                className="h-8 gap-1 bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-700"
               >
-                <ArrowUpDown className="h-3.5 w-3.5" />
+                <Upload className="h-3.5 w-3.5" />
                 Import CSV
               </Button>
               <Button
                 onClick={() => setIsAddingNew(true)}
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1 bg-blue-50 border-blue-200 hover:bg-blue-100 hover:text-blue-700"
+                className="h-8 gap-1 ml-auto bg-primary-50 border-primary-200 hover:bg-primary-100 text-primary-700"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Add Entry
-              </Button>
-              <Button
-                onClick={handleCopyCSV}
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1 bg-green-50 border-green-200 hover:bg-green-100 hover:text-green-700"
-                disabled={allEntries.length === 0}
-              >
-                <Copy className="h-3.5 w-3.5" />
-                Copy CSV
               </Button>
             </div>
           </div>
 
           <PaymentsTable
-            payments={allEntries}
+            payments={allEntriesForTable} 
             editingPayment={editingPayment}
             editValues={editValues}
             onStartEdit={startEditPayment}
@@ -473,14 +516,16 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         </div>
       )}
 
-      {/* Analysis View */}
       {showOnlyAnalysis && (
         <div className="space-y-3">
-          <CashFlowAnalysis projectData={projectData} />
+          <CashFlowAnalysis 
+            projectData={projectData} 
+            allPaymentsWithInterest={currentInterestDetails?.allPaymentsWithInterest || projectData.payments} 
+            projectEndDate={projectEndDate}
+          />
         </div>
       )}
 
-      {/* CSV Import Popup */}
       {isImportOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setIsImportOpen(false)}>
           <div className="relative max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>

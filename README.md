@@ -1,73 +1,87 @@
-# Welcome to your Lovable project
+# Realty Return Calculator
 
-## Project info
+This project is a web application designed to help users calculate returns on realty investments, manage cash flows, and analyze potential profitability. It features interest calculation, CSV data import/export, and a cash flow table.
 
-**URL**: https://lovable.dev/projects/891d0a3e-c3b0-4515-9a53-5da861374db3
+## Project Overview
 
-## How can I edit this code?
+The Realty Return Calculator provides tools for:
+- Inputting and managing payment schedules and rental income.
+- Calculating monthly interest on outstanding balances.
+- Importing cash flow data from CSV files.
+- Exporting cash flow data to CSV files.
+- Viewing a detailed table of all cash flow entries (payments, returns, interest).
+- Analyzing overall project cash flow (future feature).
 
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/891d0a3e-c3b0-4515-9a53-5da861374db3) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
+## Technologies Used
 
 This project is built with:
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- **Vite**: For fast frontend build tooling.
+- **React**: For building the user interface.
+- **TypeScript**: For static typing and improved code quality.
+- **shadcn-ui**: For UI components.
+- **Tailwind CSS**: For utility-first CSS styling.
+- **Lucide React**: For icons.
+- **date-fns**: For date utility functions.
 
-## How can I deploy this project?
+## Features
 
-Simply open [Lovable](https://lovable.dev/projects/891d0a3e-c3b0-4515-9a53-5da861374db3) and click on Share -> Publish.
+- **Cash Flow Management**: Add, edit, and delete payment and return entries.
+- **Interest Calculation**: Automatically calculate and add monthly interest payments based on an annual interest rate and cash flow timing.
+- **CSV Import/Export**: 
+    - Import cash flow data from a CSV file (format: `Date (MMM-YYYY), Amount (Number), Description (String), Type ('payment' or 'return', optional)`).
+    - Export the current cash flow table to a CSV file.
+- **Dynamic Table View**: Displays all payments, returns, and calculated interest chronologically, with running balances.
+- **Responsive Design**: UI adapts to different screen sizes (leveraging Tailwind CSS and shadcn-ui).
 
-## Can I connect a custom domain to my Lovable project?
+## Getting Started
 
-Yes, you can!
+To run this project locally, follow these steps:
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+1.  **Clone the repository:**
+    ```sh
+    git clone <YOUR_GIT_URL> # Replace with your project's Git URL
+    cd realty-return-calculator
+    ```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+2.  **Install dependencies:**
+    ```sh
+    npm install
+    ```
+    Or if you prefer yarn:
+    ```sh
+    yarn install
+    ```
+
+3.  **Run the development server:**
+    ```sh
+    npm run dev
+    ```
+    Or with yarn:
+    ```sh
+    yarn dev
+    ```
+    This will start the Vite development server, typically on `http://localhost:5173`.
+
+## Project Structure (Key Directories)
+
+-   `src/components/`: Contains React components.
+    -   `src/components/payments/`: Components specifically related to payment display and interaction.
+-   `src/utils/`: Contains utility functions (e.g., `interestCalculator.ts`, `csvExport.ts`).
+-   `src/types/`: Contains TypeScript type definitions (e.g., `project.ts`).
+-   `src/hooks/`: Custom React hooks (e.g., `use-toast.ts`).
+-   `public/`: Static assets.
+
+## Contributing
+
+[Details on how to contribute, if applicable, e.g., coding standards, pull request process.]
+
+## Future Enhancements
+
+- More detailed cash flow analysis and visualization.
+- User authentication and data persistence.
+- Advanced financial metrics (IRR, NPV).
+
+---
+
+*This README was last updated on May 24, 2025.*

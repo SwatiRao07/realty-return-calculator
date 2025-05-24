@@ -7,6 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { EnhancedCalendar } from '@/components/ui/enhanced-calendar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Payment } from '@/types/project';
+type PaymentType = 'payment' | 'return' | 'interest';
 import { Trash2, CalendarIcon, Pencil, Check, X, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -72,6 +73,28 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
     }
   };
 
+  // Calculate running balance for each payment
+  const calculateRunningBalances = () => {
+    let balance = 0;
+    const sortedPayments = [...payments].sort((a, b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : monthToDate(a.month).getTime();
+      const dateB = b.date ? new Date(b.date).getTime() : monthToDate(b.month).getTime();
+      return dateA - dateB;
+    });
+
+    return sortedPayments.map(payment => {
+      if (payment.type === 'payment') {
+        balance += payment.amount; // Payments increase loan balance (positive)
+      } else if (payment.type === 'return') {
+        balance -= payment.amount; // Returns decrease loan balance (negative)
+      } else if (payment.type === 'interest') {
+        balance += payment.amount; // Interest increases loan balance
+      }
+      return { ...payment, balance };
+    });
+  };
+
+  const paymentsWithBalance = calculateRunningBalances();
   const totalPayments = payments.reduce((sum, p) => sum + (p.type === 'return' ? p.amount : -p.amount), 0);
   const netCashFlow = payments.reduce((sum, p) => sum + (p.type === 'return' ? p.amount : -p.amount), 0);
 
@@ -87,18 +110,19 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
               <TableHead className="py-2 text-xs font-medium text-gray-500">Amount (₹)</TableHead>
               <TableHead className="py-2 text-xs font-medium text-gray-500">Type</TableHead>
               <TableHead className="py-2 text-xs font-medium text-gray-500">Description</TableHead>
+              <TableHead className="py-2 text-xs font-medium text-gray-500">Outstanding Principal</TableHead>
               <TableHead className="py-2 text-xs font-medium text-gray-500 text-right w-24">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {payments.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-4 text-center text-sm text-gray-500">
+                <TableCell colSpan={6} className="py-4 text-center text-sm text-gray-500">
                   No cash flow entries yet. Add your first entry to get started.
                 </TableCell>
               </TableRow>
             )}
-            {payments.map((payment, index) => (
+            {paymentsWithBalance.map((payment, index) => (
               <TableRow key={payment.id}>
                 <TableCell className="p-1">
                   {editingPayment === payment.id ? (
@@ -167,8 +191,8 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
                       autoFocus
                     />
                   ) : (
-                    <span className={`text-sm ${payment.type === 'return' ? 'text-green-600' : 'text-red-600'}`}>
-                      {payment.type === 'return' ? '+' : '-'}{formatNumber(payment.amount)}
+                    <span className={`text-sm ${(payment.type as PaymentType) === 'return' ? 'text-green-600' : (payment.type as PaymentType) === 'interest' ? 'text-purple-600' : 'text-red-600'}`}>
+                      {(payment.type as PaymentType) === 'return' ? '+' : (payment.type as PaymentType) === 'interest' ? '' : '-'}{formatNumber(payment.amount)}
                     </span>
                   )}
                 </TableCell>
@@ -183,8 +207,8 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
                       <option value="return">Return</option>
                     </select>
                   ) : (
-                    <span className={`text-sm font-medium ${payment.type === 'return' ? 'text-green-600' : 'text-red-600'}`}>
-                      {payment.type === 'return' ? 'Return' : 'Payment'}
+                    <span className={`text-sm font-medium ${(payment.type as PaymentType) === 'return' ? 'text-green-600' : (payment.type as PaymentType) === 'interest' ? 'text-purple-600' : 'text-red-600'}`}>
+                      {(payment.type as PaymentType) === 'return' ? 'Return' : (payment.type as PaymentType) === 'interest' ? 'Interest' : 'Payment'}
                     </span>
                   )}
                 </TableCell>
@@ -200,8 +224,11 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
                     <span className="text-sm">{payment.description}</span>
                   )}
                 </TableCell>
-                <TableCell className="p-1 text-right">
-                  {editingPayment === payment.id ? (
+                <TableCell className="py-2 text-right pr-4">
+                  {formatCurrency(payment.balance)}
+                </TableCell>
+                <TableCell className="text-right py-2 pr-4 w-24">
+                  {editingPayment === payment.id || payment.type === 'interest' ? (
                     <div className="flex items-center justify-end gap-1">
                       <Button
                         variant="ghost"
@@ -222,24 +249,29 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
                     </div>
                   ) : (
                     <div className="flex items-center justify-end space-x-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onStartEdit(payment.id, payment)}
-                        className="p-1 h-7 w-7 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100"
-                        title="Edit entry"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onRemove(payment.id)}
-                        className="p-1 h-7 w-7 rounded-full bg-red-50 text-red-600 hover:bg-red-100"
-                        title="Delete entry"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      {(payment.type as PaymentType) !== 'interest' ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onStartEdit(payment.id, payment)}
+                          className="h-7 w-7 p-0 bg-blue-50 text-blue-600 hover:bg-blue-100"
+                          title="Edit entry"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                      ) : null}
+                      {(payment.type as PaymentType) !== 'interest' ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onRemove(payment.id)}
+                          className="p-1 h-7 w-7 rounded-full bg-red-50 text-red-600 hover:bg-red-100"
+                          title="Delete entry"
+                        >
+                      
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      ) : null}
                     </div>
                   )}
                 </TableCell>

@@ -1,4 +1,3 @@
-
 export interface Payment {
   id: string;
   month: number;
@@ -6,10 +5,11 @@ export interface Payment {
   description?: string;
   debtFunded?: boolean;
   date?: Date | string;
-  type?: 'payment' | 'return';
+  type?: 'payment' | 'return' | 'interest';
 }
 
 export interface IncomeItem {
+  id?: string;
   month: number;
   amount: number;
   type: 'rental' | 'sale';
