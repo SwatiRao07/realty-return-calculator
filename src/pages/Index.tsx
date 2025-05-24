@@ -2,12 +2,10 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ProjectSetup } from '@/components/ProjectSetup';
-import { PaymentSchedule } from '@/components/PaymentSchedule';
-import { CashFlowAnalysis } from '@/components/CashFlowAnalysis';
+import { PaymentsCashFlow } from '@/components/PaymentsCashFlow';
 import { FinancialMetrics } from '@/components/FinancialMetrics';
 import { ProjectData, Payment } from '@/types/project';
-import { Calculator, TrendingUp, FileSpreadsheet, BarChart3 } from 'lucide-react';
+import { TrendingUp, BarChart3 } from 'lucide-react';
 
 const Index = () => {
   const [projectData, setProjectData] = useState<ProjectData>({
@@ -38,7 +36,7 @@ const Index = () => {
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8 text-center">
           <h1 className="text-4xl font-bold text-gray-900 mb-2 flex items-center justify-center gap-3">
-            <Calculator className="text-blue-600" />
+            <TrendingUp className="text-blue-600" />
             Real Estate Investment Analyzer
           </h1>
           <p className="text-lg text-gray-600">
@@ -46,76 +44,41 @@ const Index = () => {
           </p>
         </div>
 
-        <Tabs defaultValue="setup" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:flex">
-            <TabsTrigger value="setup" className="flex items-center gap-2">
-              <Calculator className="w-4 h-4" />
-              <span className="hidden sm:inline">Setup</span>
-            </TabsTrigger>
+        <Tabs defaultValue="payments" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="payments" className="flex items-center gap-2">
-              <FileSpreadsheet className="w-4 h-4" />
-              <span className="hidden sm:inline">Payments</span>
-            </TabsTrigger>
-            <TabsTrigger value="cashflow" className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4" />
-              <span className="hidden sm:inline">Cash Flow</span>
+              <span>Payments & Cash Flow</span>
             </TabsTrigger>
             <TabsTrigger value="metrics" className="flex items-center gap-2">
               <BarChart3 className="w-4 h-4" />
-              <span className="hidden sm:inline">Metrics</span>
+              <span>Metrics & Setup</span>
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="setup">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calculator className="w-5 h-5 text-blue-600" />
-                  Project Setup
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ProjectSetup 
-                  projectData={projectData} 
-                  updateProjectData={updateProjectData} 
-                />
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           <TabsContent value="payments">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-5 h-5 text-green-600" />
-                  Payment Schedule
+                  <TrendingUp className="w-5 h-5 text-blue-600" />
+                  Payments & Cash Flow Analysis
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <PaymentSchedule 
-                  payments={projectData.payments}
+              <CardContent className="p-0">
+                <PaymentsCashFlow 
+                  projectData={projectData}
+                  updateProjectData={updateProjectData}
                   updatePayments={updatePayments}
                 />
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="cashflow">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="w-5 h-5 text-purple-600" />
-                  Cash Flow Analysis
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <CashFlowAnalysis projectData={projectData} />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           <TabsContent value="metrics">
-            <FinancialMetrics projectData={projectData} />
+            <FinancialMetrics 
+              projectData={projectData} 
+              updateProjectData={updateProjectData}
+            />
           </TabsContent>
         </Tabs>
       </div>

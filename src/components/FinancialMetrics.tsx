@@ -2,13 +2,28 @@
 import React, { useMemo } from 'react';
 import { ProjectData } from '@/types/project';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, Calculator, Target, DollarSign } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { TrendingUp, Calculator, Target, DollarSign, Settings } from 'lucide-react';
 
 interface FinancialMetricsProps {
   projectData: ProjectData;
+  updateProjectData: (updates: Partial<ProjectData>) => void;
 }
 
-export const FinancialMetrics: React.FC<FinancialMetricsProps> = ({ projectData }) => {
+export const FinancialMetrics: React.FC<FinancialMetricsProps> = ({ projectData, updateProjectData }) => {
+  const handleInputChange = (field: keyof ProjectData, value: string | number) => {
+    updateProjectData({ [field]: value });
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      maximumFractionDigits: 0
+    }).format(value);
+  };
+
   const metrics = useMemo(() => {
     // Calculate cash flows
     const cashFlows: number[] = [];
@@ -33,7 +48,10 @@ export const FinancialMetrics: React.FC<FinancialMetricsProps> = ({ projectData 
       outstandingBalance += debtFundedPayments;
 
       const interest = outstandingBalance * projectData.monthlyInterestRate;
-      const rental = 0; // Simplified for now
+      
+      const rental = projectData.rentalIncome
+        .filter(r => r.month === month)
+        .reduce((sum, r) => sum + r.amount, 0);
 
       let sale = 0;
       if (month === projectData.saleMonth) {
@@ -86,7 +104,7 @@ export const FinancialMetrics: React.FC<FinancialMetricsProps> = ({ projectData 
     const roi = ((totalReturns - totalInvestment) / totalInvestment) * 100;
 
     return {
-      irr: irr * 12 * 100, // Convert to annual percentage
+      irr: irr * 12 * 100,
       npv,
       roi,
       totalInvestment,
@@ -96,14 +114,6 @@ export const FinancialMetrics: React.FC<FinancialMetricsProps> = ({ projectData 
       )
     };
   }, [projectData]);
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      maximumFractionDigits: 0
-    }).format(value);
-  };
 
   const formatPercentage = (value: number) => {
     return `${value.toFixed(2)}%`;
@@ -117,118 +127,229 @@ export const FinancialMetrics: React.FC<FinancialMetricsProps> = ({ projectData 
   };
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-      <Card className="border-blue-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-blue-600" />
-            Internal Rate of Return
+    <div className="space-y-6">
+      {/* Project Setup Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Settings className="w-5 h-5 text-blue-600" />
+            Project Setup
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
-            <p className={`text-2xl font-bold ${getMetricColor(metrics.irr, true)}`}>
-              {formatPercentage(metrics.irr)}
-            </p>
-            <p className="text-xs text-gray-500">
-              Annual return rate
-            </p>
-            <div className="text-xs">
-              {metrics.irr >= 15 ? (
-                <span className="text-green-600">● Excellent</span>
-              ) : metrics.irr >= 0 ? (
-                <span className="text-yellow-600">● Good</span>
-              ) : (
-                <span className="text-red-600">● Poor</span>
-              )}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="projectName">Project Name</Label>
+                <Input
+                  id="projectName"
+                  value={projectData.projectName}
+                  onChange={(e) => handleInputChange('projectName', e.target.value)}
+                  placeholder="Enter project name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="purchasePrice">Purchase Price (₹)</Label>
+                <Input
+                  id="purchasePrice"
+                  type="number"
+                  value={projectData.purchasePrice}
+                  onChange={(e) => handleInputChange('purchasePrice', Number(e.target.value))}
+                  placeholder="5000000"
+                />
+              </div>
+              <div>
+                <Label htmlFor="closingCosts">Closing Costs (₹)</Label>
+                <Input
+                  id="closingCosts"
+                  type="number"
+                  value={projectData.closingCosts}
+                  onChange={(e) => handleInputChange('closingCosts', Number(e.target.value))}
+                  placeholder="100000"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="salePrice">Expected Sale Price (₹)</Label>
+                <Input
+                  id="salePrice"
+                  type="number"
+                  value={projectData.salePrice}
+                  onChange={(e) => handleInputChange('salePrice', Number(e.target.value))}
+                  placeholder="8000000"
+                />
+              </div>
+              <div>
+                <Label htmlFor="saleMonth">Sale Month</Label>
+                <Input
+                  id="saleMonth"
+                  type="number"
+                  value={projectData.saleMonth}
+                  onChange={(e) => handleInputChange('saleMonth', Number(e.target.value))}
+                  placeholder="24"
+                  min="1"
+                />
+              </div>
+              <div>
+                <Label htmlFor="sellingCosts">Selling Costs (₹)</Label>
+                <Input
+                  id="sellingCosts"
+                  type="number"
+                  value={projectData.sellingCosts}
+                  onChange={(e) => handleInputChange('sellingCosts', Number(e.target.value))}
+                  placeholder="200000"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="monthlyInterestRate">Monthly Interest Rate (%)</Label>
+                <Input
+                  id="monthlyInterestRate"
+                  type="number"
+                  step="0.01"
+                  value={(projectData.monthlyInterestRate * 100).toFixed(2)}
+                  onChange={(e) => handleInputChange('monthlyInterestRate', Number(e.target.value) / 100)}
+                  placeholder="1.00"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {(projectData.monthlyInterestRate * 12 * 100).toFixed(1)}% annual rate
+                </p>
+              </div>
+              <div>
+                <Label htmlFor="discountRate">Discount Rate for NPV (%)</Label>
+                <Input
+                  id="discountRate"
+                  type="number"
+                  step="0.01"
+                  value={(projectData.discountRate * 100).toFixed(2)}
+                  onChange={(e) => handleInputChange('discountRate', Number(e.target.value) / 100)}
+                  placeholder="12.00"
+                />
+              </div>
             </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card className="border-green-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-green-600" />
-            Net Present Value
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <p className={`text-2xl font-bold ${getMetricColor(metrics.npv)}`}>
-              {formatCurrency(metrics.npv)}
-            </p>
-            <p className="text-xs text-gray-500">
-              At {formatPercentage(projectData.discountRate * 100)} discount rate
-            </p>
-            <div className="text-xs">
-              {metrics.npv > 0 ? (
-                <span className="text-green-600">● Value Creating</span>
-              ) : (
-                <span className="text-red-600">● Value Destroying</span>
-              )}
+      {/* Financial Metrics */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="border-blue-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-blue-600" />
+              Internal Rate of Return
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <p className={`text-2xl font-bold ${getMetricColor(metrics.irr, true)}`}>
+                {formatPercentage(metrics.irr)}
+              </p>
+              <p className="text-xs text-gray-500">
+                Annual return rate
+              </p>
+              <div className="text-xs">
+                {metrics.irr >= 15 ? (
+                  <span className="text-green-600">● Excellent</span>
+                ) : metrics.irr >= 0 ? (
+                  <span className="text-yellow-600">● Good</span>
+                ) : (
+                  <span className="text-red-600">● Poor</span>
+                )}
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card className="border-purple-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Target className="w-4 h-4 text-purple-600" />
-            Return on Investment
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <p className={`text-2xl font-bold ${getMetricColor(metrics.roi, true)}`}>
-              {formatPercentage(metrics.roi)}
-            </p>
-            <p className="text-xs text-gray-500">
-              Total project ROI
-            </p>
-            <div className="text-xs">
-              {metrics.roi >= 25 ? (
-                <span className="text-green-600">● Excellent</span>
-              ) : metrics.roi >= 0 ? (
-                <span className="text-yellow-600">● Acceptable</span>
-              ) : (
-                <span className="text-red-600">● Loss</span>
-              )}
+        <Card className="border-green-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-green-600" />
+              Net Present Value
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <p className={`text-2xl font-bold ${getMetricColor(metrics.npv)}`}>
+                {formatCurrency(metrics.npv)}
+              </p>
+              <p className="text-xs text-gray-500">
+                At {formatPercentage(projectData.discountRate * 100)} discount rate
+              </p>
+              <div className="text-xs">
+                {metrics.npv > 0 ? (
+                  <span className="text-green-600">● Value Creating</span>
+                ) : (
+                  <span className="text-red-600">● Value Destroying</span>
+                )}
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card className="border-orange-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <DollarSign className="w-4 h-4 text-orange-600" />
-            Payback Period
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2">
-            <p className="text-2xl font-bold text-orange-600">
-              {metrics.paybackPeriod > 0 ? `${metrics.paybackPeriod} months` : 'No payback'}
-            </p>
-            <p className="text-xs text-gray-500">
-              Time to recover investment
-            </p>
-            <div className="text-xs">
-              {metrics.paybackPeriod <= 12 ? (
-                <span className="text-green-600">● Fast Recovery</span>
-              ) : metrics.paybackPeriod <= 24 ? (
-                <span className="text-yellow-600">● Moderate</span>
-              ) : (
-                <span className="text-red-600">● Slow Recovery</span>
-              )}
+        <Card className="border-purple-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Target className="w-4 h-4 text-purple-600" />
+              Return on Investment
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <p className={`text-2xl font-bold ${getMetricColor(metrics.roi, true)}`}>
+                {formatPercentage(metrics.roi)}
+              </p>
+              <p className="text-xs text-gray-500">
+                Total project ROI
+              </p>
+              <div className="text-xs">
+                {metrics.roi >= 25 ? (
+                  <span className="text-green-600">● Excellent</span>
+                ) : metrics.roi >= 0 ? (
+                  <span className="text-yellow-600">● Acceptable</span>
+                ) : (
+                  <span className="text-red-600">● Loss</span>
+                )}
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card className="md:col-span-2 lg:col-span-4">
+        <Card className="border-orange-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-orange-600" />
+              Payback Period
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <p className="text-2xl font-bold text-orange-600">
+                {metrics.paybackPeriod > 0 ? `${metrics.paybackPeriod} months` : 'No payback'}
+              </p>
+              <p className="text-xs text-gray-500">
+                Time to recover investment
+              </p>
+              <div className="text-xs">
+                {metrics.paybackPeriod <= 12 ? (
+                  <span className="text-green-600">● Fast Recovery</span>
+                ) : metrics.paybackPeriod <= 24 ? (
+                  <span className="text-yellow-600">● Moderate</span>
+                ) : (
+                  <span className="text-red-600">● Slow Recovery</span>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Financial Summary */}
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5 text-blue-600" />
@@ -258,24 +379,6 @@ export const FinancialMetrics: React.FC<FinancialMetricsProps> = ({ projectData 
               }`}>
                 {formatCurrency(metrics.totalReturns - metrics.totalInvestment)}
               </p>
-            </div>
-          </div>
-
-          <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium mb-2">Investment Guidelines</h4>
-            <div className="grid gap-2 text-sm text-gray-600">
-              <div className="flex justify-between">
-                <span>IRR Target:</span>
-                <span>15%+ (Excellent), 10-15% (Good), &lt;10% (Poor)</span>
-              </div>
-              <div className="flex justify-between">
-                <span>NPV:</span>
-                <span>Positive value creates wealth</span>
-              </div>
-              <div className="flex justify-between">
-                <span>ROI Target:</span>
-                <span>25%+ (Excellent), 15-25% (Good), &lt;15% (Review)</span>
-              </div>
             </div>
           </div>
         </CardContent>
