@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,46 +33,105 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
     }).format(value);
   };
 
+  const parseCurrencyAmount = (amountStr: string): number => {
+    // Remove currency symbol, commas, and any other non-numeric characters except decimal point and minus
+    const cleanAmount = amountStr.replace(/[₹,\s]/g, '').replace(/[^\d.-]/g, '');
+    return parseFloat(cleanAmount) || 0;
+  };
+
+  const parseDate = (dateStr: string): number => {
+    // Handle formats like "May-2025", "2025-05", or direct month numbers
+    if (!isNaN(Number(dateStr))) {
+      return Number(dateStr);
+    }
+    
+    try {
+      // Handle "May-2025" format
+      if (dateStr.includes('-')) {
+        const [monthPart, yearPart] = dateStr.split('-');
+        let month: number;
+        let year: number;
+        
+        // Check if first part is month name or number
+        if (isNaN(Number(monthPart))) {
+          // Month name like "May"
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                             'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          month = monthNames.findIndex(name => monthPart.toLowerCase().startsWith(name.toLowerCase())) + 1;
+          year = parseInt(yearPart);
+        } else {
+          // Numeric format like "2025-05"
+          year = parseInt(monthPart);
+          month = parseInt(yearPart);
+        }
+        
+        if (month && year) {
+          // Calculate months from January 2024 as baseline
+          const baselineYear = 2024;
+          const baselineMonth = 1;
+          return (year - baselineYear) * 12 + (month - baselineMonth) + 1;
+        }
+      }
+      
+      // Try to parse as a regular date
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const baselineYear = 2024;
+        const baselineMonth = 1;
+        return (year - baselineYear) * 12 + (month - baselineMonth) + 1;
+      }
+    } catch (error) {
+      console.error('Date parsing error:', error);
+    }
+    
+    return 1; // Default to month 1 if parsing fails
+  };
+
   const parseCsvData = (csvText: string, isReturns = false) => {
     try {
       const lines = csvText.trim().split('\n');
       const newPayments: Payment[] = [];
 
       lines.forEach((line, index) => {
-        const [dateOrMonth, amount, description = ''] = line.split(',').map(s => s.trim());
+        const parts = line.split(',');
+        if (parts.length < 3) return;
         
-        if (!dateOrMonth || !amount) return;
-
-        let month: number;
+        const [dateOrMonth, ...amountAndDesc] = parts;
         
-        // Try to parse as month number first
-        if (!isNaN(Number(dateOrMonth))) {
-          month = Number(dateOrMonth);
+        // Handle the case where amount might contain commas (like "₹1,460,461")
+        // Join the parts and find where description starts
+        const joinedParts = amountAndDesc.join(',');
+        
+        // Find the last comma that separates amount from description
+        const lastCommaIndex = joinedParts.lastIndexOf(',');
+        let amount: string;
+        let description: string;
+        
+        if (lastCommaIndex > 0) {
+          amount = joinedParts.substring(0, lastCommaIndex);
+          description = joinedParts.substring(lastCommaIndex + 1);
         } else {
-          // Try to parse as date
-          const date = new Date(dateOrMonth);
-          if (!isNaN(date.getTime())) {
-            // Calculate month difference from a baseline
-            const baseline = new Date('2024-01-01');
-            month = Math.ceil((date.getTime() - baseline.getTime()) / (1000 * 60 * 60 * 24 * 30));
-          } else {
-            throw new Error(`Invalid date/month format at line ${index + 1}`);
-          }
+          amount = joinedParts;
+          description = '';
         }
+        
+        if (!dateOrMonth.trim() || !amount.trim()) return;
 
-        const amountValue = Number(amount);
+        const month = parseDate(dateOrMonth.trim());
+        const amountValue = parseCurrencyAmount(amount.trim());
         
         newPayments.push({
           id: Math.random().toString(36).substr(2, 9),
           month: month,
-          amount: isReturns ? Math.abs(amountValue) : Math.abs(amountValue), // Store absolute values
-          description: description || (isReturns ? `Return ${month}` : `Payment ${month}`),
-          debtFunded: false // Default value
+          amount: Math.abs(amountValue), // Store as positive, sign will be handled in display
+          description: description.trim() || (isReturns ? `Return ${month}` : `Payment ${month}`),
+          debtFunded: false
         });
       });
 
       if (isReturns) {
-        // Add to rental income instead of payments
         const newRentalIncome = newPayments.map(p => ({
           month: p.month,
           amount: p.amount,
@@ -146,6 +204,20 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
     updateProjectData({ rentalIncome: updatedReturns });
   };
 
+  const getMonthYearDisplay = (month: number): string => {
+    const baselineYear = 2024;
+    const baselineMonth = 1;
+    
+    const totalMonths = month - 1 + baselineMonth - 1;
+    const year = baselineYear + Math.floor(totalMonths / 12);
+    const monthNum = (totalMonths % 12) + 1;
+    
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    return `${monthNames[monthNum - 1]} ${year}`;
+  };
+
   const sortedPayments = [...projectData.payments].sort((a, b) => a.month - b.month);
   const sortedReturns = [...projectData.rentalIncome].sort((a, b) => a.month - b.month);
   const totalPayments = projectData.payments.reduce((sum, p) => sum + p.amount, 0);
@@ -176,15 +248,14 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
                     id="csvData"
                     value={csvData}
                     onChange={(e) => setCsvData(e.target.value)}
-                    placeholder="Date/Month,Amount,Description
-2024-01-15,500000,Initial Payment
-2,750000,Progress Payment
-2024-06-01,1000000,Completion Payment"
+                    placeholder="May-2025,₹1,460,461,On Booking
+Jun-2025,₹2,920,922,On Agreement
+Jul-2025,₹2,044,645,On Foundation"
                     rows={6}
                     className="font-mono text-sm"
                   />
                   <p className="text-xs text-gray-500 mt-2">
-                    Format: Date/Month, Amount (positive for outflow), Description
+                    Format: Date (May-2025), Amount (₹1,460,461), Description
                   </p>
                 </div>
                 <Button 
@@ -247,18 +318,23 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
                       {sortedPayments.map((payment, index) => (
                         <tr key={payment.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
                           <td className="p-3">
-                            <Input
-                              type="number"
-                              value={payment.month}
-                              onChange={(e) => updatePayment(payment.id, 'month', Number(e.target.value))}
-                              className="w-20"
-                              min="1"
-                            />
+                            <div className="flex flex-col">
+                              <Input
+                                type="number"
+                                value={payment.month || ''}
+                                onChange={(e) => updatePayment(payment.id, 'month', Number(e.target.value))}
+                                className="w-20 mb-1"
+                                min="1"
+                              />
+                              <span className="text-xs text-gray-500">
+                                {payment.month ? getMonthYearDisplay(payment.month) : ''}
+                              </span>
+                            </div>
                           </td>
                           <td className="p-3">
                             <Input
                               type="number"
-                              value={payment.amount}
+                              value={payment.amount || ''}
                               onChange={(e) => updatePayment(payment.id, 'amount', Number(e.target.value))}
                               className="w-32"
                             />
@@ -306,15 +382,14 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
                     id="returnsCsvData"
                     value={returnsCsvData}
                     onChange={(e) => setReturnsCsvData(e.target.value)}
-                    placeholder="Date/Month,Amount,Description
-2024-06-01,25000,Monthly Rent
-12,25000,Monthly Rent
-24,8000000,Property Sale"
+                    placeholder="Jun-2026,₹25,000,Monthly Rent
+Jul-2026,₹25,000,Monthly Rent
+Mar-2028,₹80,00,000,Property Sale"
                     rows={6}
                     className="font-mono text-sm"
                   />
                   <p className="text-xs text-gray-500 mt-2">
-                    Format: Date/Month, Amount (positive for inflow), Description
+                    Format: Date (Jun-2026), Amount (₹25,000), Description
                   </p>
                 </div>
                 <Button 
@@ -377,18 +452,23 @@ export const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
                       {sortedReturns.map((returnItem, index) => (
                         <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}>
                           <td className="p-3">
-                            <Input
-                              type="number"
-                              value={returnItem.month}
-                              onChange={(e) => updateReturn(index, 'month', Number(e.target.value))}
-                              className="w-20"
-                              min="1"
-                            />
+                            <div className="flex flex-col">
+                              <Input
+                                type="number"
+                                value={returnItem.month || ''}
+                                onChange={(e) => updateReturn(index, 'month', Number(e.target.value))}
+                                className="w-20 mb-1"
+                                min="1"
+                              />
+                              <span className="text-xs text-gray-500">
+                                {returnItem.month ? getMonthYearDisplay(returnItem.month) : ''}
+                              </span>
+                            </div>
                           </td>
                           <td className="p-3">
                             <Input
                               type="number"
-                              value={returnItem.amount}
+                              value={returnItem.amount || ''}
                               onChange={(e) => updateReturn(index, 'amount', Number(e.target.value))}
                               className="w-32"
                             />

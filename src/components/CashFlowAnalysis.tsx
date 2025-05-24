@@ -9,30 +9,41 @@ interface CashFlowAnalysisProps {
 }
 
 export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData }) => {
+  const getMonthYearDisplay = (month: number): string => {
+    const baselineYear = 2024;
+    const baselineMonth = 1;
+    
+    const totalMonths = month - 1 + baselineMonth - 1;
+    const year = baselineYear + Math.floor(totalMonths / 12);
+    const monthNum = (totalMonths % 12) + 1;
+    
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    return `${monthNames[monthNum - 1]} ${year}`;
+  };
+
   const cashFlowData = useMemo(() => {
     const rows: CashFlowRow[] = [];
     let cumulativeCashFlow = 0;
     let outstandingBalance = 0;
 
-    // Initial investment in month 0
-    const initialInvestment = projectData.purchasePrice + projectData.closingCosts;
-    cumulativeCashFlow = -initialInvestment;
-    outstandingBalance = initialInvestment;
+    // Only proceed if we have actual data
+    if (projectData.payments.length === 0 && projectData.rentalIncome.length === 0) {
+      return rows;
+    }
 
-    // Add month 0
-    rows.push({
-      month: 0,
-      payments: -initialInvestment,
-      interest: 0,
-      rental: 0,
-      sale: 0,
-      netCashFlow: -initialInvestment,
-      cumulativeCashFlow,
-      outstandingBalance
-    });
+    // Find the maximum month from payments and returns
+    const maxPaymentMonth = projectData.payments.length > 0 
+      ? Math.max(...projectData.payments.map(p => p.month))
+      : 0;
+    const maxReturnMonth = projectData.rentalIncome.length > 0
+      ? Math.max(...projectData.rentalIncome.map(r => r.month))
+      : 0;
+    const maxMonth = Math.max(maxPaymentMonth, maxReturnMonth, projectData.saleMonth || 0);
 
-    // Calculate for each month up to sale month
-    for (let month = 1; month <= projectData.saleMonth; month++) {
+    // Calculate for each month up to the maximum month
+    for (let month = 1; month <= maxMonth; month++) {
       const monthPayments = projectData.payments
         .filter(p => p.month === month)
         .reduce((sum, p) => sum + p.amount, 0);
@@ -47,14 +58,16 @@ export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData 
       outstandingBalance += debtFundedPayments;
 
       // Calculate interest on outstanding balance
-      const interest = outstandingBalance * projectData.monthlyInterestRate;
+      const interest = outstandingBalance * (projectData.monthlyInterestRate || 0);
 
-      // Rental income (simplified - can be enhanced later)
-      const rental = 0; // TODO: Add rental income logic
+      // Rental income from the rentalIncome array
+      const rental = projectData.rentalIncome
+        .filter(r => r.month === month)
+        .reduce((sum, r) => sum + r.amount, 0);
 
       // Sale proceeds in the final month
       const sale = month === projectData.saleMonth 
-        ? projectData.salePrice - projectData.sellingCosts - outstandingBalance
+        ? (projectData.salePrice || 0) - (projectData.sellingCosts || 0) - outstandingBalance
         : 0;
 
       // If sale happens, outstanding balance becomes 0
@@ -65,16 +78,19 @@ export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData 
       const netCashFlow = -equityPayments - interest + rental + sale;
       cumulativeCashFlow += netCashFlow;
 
-      rows.push({
-        month,
-        payments: -monthPayments,
-        interest: -interest,
-        rental,
-        sale,
-        netCashFlow,
-        cumulativeCashFlow,
-        outstandingBalance: month === projectData.saleMonth ? 0 : outstandingBalance
-      });
+      // Only add rows that have some activity
+      if (monthPayments > 0 || rental > 0 || sale > 0 || interest > 0) {
+        rows.push({
+          month,
+          payments: -monthPayments,
+          interest: -interest,
+          rental,
+          sale,
+          netCashFlow,
+          cumulativeCashFlow,
+          outstandingBalance: month === projectData.saleMonth ? 0 : outstandingBalance
+        });
+      }
     }
 
     return rows;
@@ -101,6 +117,18 @@ export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData 
   };
 
   const finalCashFlow = cashFlowData[cashFlowData.length - 1]?.cumulativeCashFlow || 0;
+
+  // Don't show anything if there's no data
+  if (cashFlowData.length === 0) {
+    return (
+      <div className="space-y-4 p-6 text-center">
+        <div className="text-gray-500">
+          <p className="text-lg">No cash flow data available</p>
+          <p className="text-sm">Add payments or returns to see the cash flow analysis</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -174,7 +202,7 @@ export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData 
             {cashFlowData.map((row, index) => (
               <tr key={row.month} className={`border-b ${index % 2 === 0 ? 'bg-white' : 'bg-gray-25'}`}>
                 <td className="p-3 font-medium border-r">
-                  {row.month === 0 ? 'Initial' : `Month ${row.month}`}
+                  {getMonthYearDisplay(row.month)}
                 </td>
                 <td className={`p-3 text-right border-r ${getCellStyle(row.payments)}`}>
                   {formatNumber(row.payments)}
