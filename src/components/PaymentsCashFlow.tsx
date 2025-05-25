@@ -52,14 +52,7 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
 
   const [currentInterestDetails, setCurrentInterestDetails] = useState<CalculatedInterestResult | null>(null);
 
-  // Clear interest details when switching tabs or when payments change
-  useEffect(() => {
-    if (showOnlyCashFlow) {
-      setCurrentInterestDetails(null);
-    }
-  }, [showOnlyCashFlow]);
-
-  // Clear interest details when core payment data changes
+  // Only clear interest details when core payment data changes, NOT when switching tabs
   useEffect(() => {
     setCurrentInterestDetails(null);
   }, [projectData.payments, projectData.rentalIncome, interestRate]);
@@ -104,6 +97,11 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
       });
     }
   }, [projectData.payments, interestRate, projectEndDate, toast]);
+
+  // Get all payments with interest for analysis
+  const allPaymentsWithInterest = useMemo(() => {
+    return currentInterestDetails?.allPaymentsWithInterest || projectData.payments;
+  }, [currentInterestDetails, projectData.payments]);
 
   const allEntriesForTable: Payment[] = useMemo(() => {
     const principalPaymentsMapped: Payment[] = projectData.payments.map((p: Payment): Payment => ({
@@ -163,11 +161,6 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
       return dateA - dateB;
     });
   }, [projectData.payments, projectData.rentalIncome]);
-
-  // Get all payments with interest for analysis
-  const allPaymentsWithInterest = useMemo(() => {
-    return currentInterestDetails?.allPaymentsWithInterest || projectData.payments;
-  }, [currentInterestDetails, projectData.payments]);
 
   const handleCopyCSV = useCallback(async () => {
     try {

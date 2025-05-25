@@ -1,3 +1,4 @@
+
 import React, { useMemo } from 'react';
 import { ProjectData, Payment, IncomeItem } from '@/types/project';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -89,9 +90,10 @@ export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData,
       xirrValue: 0
     };
 
+    // Calculate total investment including both principal payments and interest
     let totalInvestment = 0;
-    projectData.payments.forEach(p => {
-      if (p.type === 'payment') { 
+    allPaymentsWithInterest.forEach(p => {
+      if (p.type === 'payment' || p.type === 'interest') { 
         totalInvestment += p.amount;
       }
     });
@@ -110,7 +112,8 @@ export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData,
 
     const netProfit = totalReturns - totalInvestment;
     
-    const principalPaymentsForXIRR = projectData.payments.filter(p => p.type === 'payment');
+    // Use only principal payments for XIRR calculation (not interest payments)
+    const principalPaymentsForXIRR = allPaymentsWithInterest.filter(p => p.type === 'payment');
     const xirrValue = calculateXIRR(principalPaymentsForXIRR, projectData.rentalIncome);
 
     return { totalInvestment, totalReturns, netProfit, totalInterestPaid, xirrValue };
@@ -151,7 +154,7 @@ export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData,
           title="Total Investment"
           value={formatCurrency(analysisSummary.totalInvestment)}
           icon={<Landmark className="h-5 w-5 text-blue-500" />}
-          description="Total principal payments made"
+          description="Principal + Interest payments"
         />
         <MetricCard 
           title="Total Returns"
