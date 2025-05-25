@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -51,6 +51,18 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
   const { toast } = useToast();
 
   const [currentInterestDetails, setCurrentInterestDetails] = useState<CalculatedInterestResult | null>(null);
+
+  // Clear interest details when switching tabs or when payments change
+  useEffect(() => {
+    if (showOnlyCashFlow) {
+      setCurrentInterestDetails(null);
+    }
+  }, [showOnlyCashFlow]);
+
+  // Clear interest details when core payment data changes
+  useEffect(() => {
+    setCurrentInterestDetails(null);
+  }, [projectData.payments, projectData.rentalIncome, interestRate]);
 
   const projectEndDate = useMemo(() => {
     const allNonInterestEntries = [
@@ -151,6 +163,11 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
       return dateA - dateB;
     });
   }, [projectData.payments, projectData.rentalIncome]);
+
+  // Get all payments with interest for analysis
+  const allPaymentsWithInterest = useMemo(() => {
+    return currentInterestDetails?.allPaymentsWithInterest || projectData.payments;
+  }, [currentInterestDetails, projectData.payments]);
 
   const handleCopyCSV = useCallback(async () => {
     try {
@@ -520,7 +537,7 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
         <div className="space-y-3">
           <CashFlowAnalysis 
             projectData={projectData} 
-            allPaymentsWithInterest={currentInterestDetails?.allPaymentsWithInterest || projectData.payments} 
+            allPaymentsWithInterest={allPaymentsWithInterest} 
             projectEndDate={projectEndDate}
           />
         </div>
