@@ -1,5 +1,7 @@
+
 import { describe, it, expect, vi } from 'vitest';
-import { calculateMonthlyInterestLogic, Payment } from './interestCalculator';
+import { calculateMonthlyInterestLogic } from './interestCalculator';
+import { Payment } from '@/types/project';
 
 // Mock monthToDate from the correct path
 vi.mock('@/components/payments/utils.tsx', () => ({
