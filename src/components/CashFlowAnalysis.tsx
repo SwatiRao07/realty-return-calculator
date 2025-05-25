@@ -1,130 +1,183 @@
 
-import React, { useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import { ProjectData, Payment, IncomeItem } from '@/types/project';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { TrendingUp, TrendingDown, BarChart2, Landmark, Scale, Percent, HandCoins, PiggyBank, CalendarDays } from 'lucide-react';
-import { format as formatDateFns } from 'date-fns'; // For formatting projectEndDate
+import { TrendingUp, BarChart2, Landmark, Scale, Percent, HandCoins, CalendarDays, RefreshCw } from 'lucide-react';
+import { format as formatDateFns, differenceInDays } from 'date-fns';
+import { monthToDate } from '@/components/payments/utils';
+import { Button } from '@/components/ui/button';
+import xirr from 'xirr';
 
 interface CashFlowAnalysisProps {
   projectData: ProjectData;
   allPaymentsWithInterest: Payment[];
-  projectEndDate?: Date; // Added projectEndDate prop
+  projectEndDate?: Date;
+  lastUpdated?: number; // Timestamp to trigger recalculation
 }
 
-const calculateXIRR = (paymentsAndOutflows: Payment[], returns: IncomeItem[]): number => {
+const calculateXIRR = (allCashFlows: Payment[]): number => {
   try {
-    const cashFlows: { amount: number; date: Date }[] = [];
+    if (allCashFlows.length < 2) return 0;
+
+    console.log('Calculating XIRR with cash flows:', allCashFlows);
     
-    paymentsAndOutflows.forEach(payment => {
-      if (payment.type === 'payment') { 
-        const date = payment.date ? new Date(payment.date) : monthToDate(payment.month); 
-        cashFlows.push({
-          amount: -Math.abs(payment.amount), 
-          date: date
-        });
+    // Properly format transactions for the xirr library
+    const transactions = allCashFlows.map(cf => {
+      const date = 'date' in cf && cf.date ? new Date(cf.date) : monthToDate(cf.month);
+      let amount;
+      if (cf.type === 'payment') {
+        amount = -Math.abs(cf.amount);
+      } else if (cf.type === 'return') {
+        amount = Math.abs(cf.amount);
+      } else if (cf.type === 'interest') {
+        amount = -Math.abs(cf.amount);
+      } else if (cf.type === 'rental') {
+        amount = Math.abs(cf.amount);
+      } else {
+        // Default case
+        amount = cf.amount;
       }
+      return { amount, when: date };
     });
-    
-    returns.forEach(income => {
-      const date = income.date ? new Date(income.date) : monthToDate(income.month); 
-      cashFlows.push({
-        amount: Math.abs(income.amount), 
-        date: date
-      });
-    });
-    
-    cashFlows.sort((a, b) => a.date.getTime() - b.date.getTime());
-    
-    if (cashFlows.length < 2) return 0; 
-    
-    const values = cashFlows.map(cf => cf.amount);
-    const dates = cashFlows.map(cf => cf.date);
 
-    const guess = 0.1; 
-    const maxIterations = 100;
-    const tolerance = 0.000001;
-    let x = guess;
-
-    for (let i = 0; i < maxIterations; i++) {
-      let fx = 0;
-      let dfx = 0;
-      const firstDate = dates[0].getTime();
-
-      for (let j = 0; j < values.length; j++) {
-        const days = (dates[j].getTime() - firstDate) / (1000 * 60 * 60 * 24);
-        const term = Math.pow(1 + x, -days / 365);
-        fx += values[j] * term;
-        if (x !== -1) { 
-            dfx += (-days / 365) * values[j] * Math.pow(1 + x, (-days / 365) - 1);
-        } else {
-            return NaN; 
-        }
-      }
-
-      if (Math.abs(dfx) < 1e-10 || isNaN(dfx)) {
-        break; 
-      }
-      
-      const newX = x - fx / dfx;
-      if (Math.abs(newX - x) < tolerance) {
-        return newX * 100; 
-      }
-      x = newX;
-    }
-    return NaN; 
+    console.log('XIRR transactions:', transactions);
+    
+    // Calculate XIRR using the xirr library
+    const result = xirr(transactions);
+    return isNaN(result) ? 0 : result * 100; // Convert to percentage
   } catch (error) {
     console.error('Error calculating XIRR:', error);
-    return 0; 
+    return 0;
   }
 };
 
-import { monthToDate } from '@/components/payments/utils'; 
+export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ 
+  projectData, 
+  allPaymentsWithInterest, 
+  projectEndDate,
+  lastUpdated = 0
+}) => {
+  // Track if initial data has been loaded
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
+  
+  const [analysisData, setAnalysisData] = useState({
+    totalInvestment: 0,
+    totalReturns: 0,
+    netProfit: 0,
+    totalInterestPaid: 0,
+    xirrValue: 0,
+    lastCalculated: null as Date | null
+  });
 
-export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData, allPaymentsWithInterest, projectEndDate }) => {
-  const analysisSummary = useMemo(() => {
-    if (!projectData) return {
-      totalInvestment: 0,
-      totalReturns: 0,
-      netProfit: 0,
-      totalInterestPaid: 0,
-      xirrValue: 0
-    };
+  // Pure calculation function that doesn't modify interest data
+  // Takes payments data as an argument to avoid side effects
+  const calculateAnalysis = (paymentsData: Payment[], projectDataInput: ProjectData) => {
+    console.log('Calculating financial metrics with existing data');
+    
+    if (!projectDataInput) {
+      return {
+        totalInvestment: 0,
+        totalReturns: 0,
+        netProfit: 0,
+        totalInterestPaid: 0,
+        xirrValue: 0,
+        lastCalculated: null
+      };
+    }
 
-    // Calculate total investment including both principal payments and interest
-    let totalInvestment = 0;
-    allPaymentsWithInterest.forEach(p => {
-      if (p.type === 'payment' || p.type === 'interest') { 
-        totalInvestment += p.amount;
+    console.log('Calculating financial analysis with:', {
+      payments: allPaymentsWithInterest.length,
+      rental: projectData.rentalIncome.length
+    });
+
+    // Total payments (only principal, not interest)
+    let totalPayments = 0;
+    paymentsData.forEach(p => {
+      if (p.type === 'payment') {
+        totalPayments += p.amount;
       }
     });
 
+    // Total interest paid
     let totalInterestPaid = 0;
-    allPaymentsWithInterest.forEach(p => {
+    paymentsData.forEach(p => {
       if (p.type === 'interest') {
-        totalInterestPaid += p.amount;
+        totalInterestPaid += Math.abs(p.amount); // Ensure positive for display
       }
     });
 
+    // Total returns
     let totalReturns = 0;
-    projectData.rentalIncome.forEach(ri => {
+    
+    // Add rental income
+    projectDataInput.rentalIncome.forEach(ri => {
       totalReturns += ri.amount;
     });
+    
+    // Add return payments
+    paymentsData.forEach(p => {
+      if (p.type === 'return') {
+        totalReturns += p.amount;
+      }
+    });
 
+    // Calculate total investment (payments + interest)
+    const totalInvestment = totalPayments + totalInterestPaid;
+    
+    // Net profit calculation
     const netProfit = totalReturns - totalInvestment;
     
-    // Use only principal payments for XIRR calculation (not interest payments)
-    const principalPaymentsForXIRR = allPaymentsWithInterest.filter(p => p.type === 'payment');
-    const xirrValue = calculateXIRR(principalPaymentsForXIRR, projectData.rentalIncome);
+    // Calculate XIRR with all cash flows
+    const allCashFlows = [
+      ...paymentsData,
+      ...projectDataInput.rentalIncome.map(ri => ({
+        ...ri,
+        type: 'rental' as const
+      }))
+    ];
+    
+    const xirrValue = calculateXIRR(allCashFlows);
 
-    return { totalInvestment, totalReturns, netProfit, totalInterestPaid, xirrValue };
-  }, [projectData, allPaymentsWithInterest]);
+    const result = { 
+      totalInvestment, 
+      totalReturns, 
+      netProfit, 
+      totalInterestPaid,
+      xirrValue,
+      lastCalculated: new Date()
+    };
+    
+    console.log('Analysis results:', result);
+    return result;
+  }; // Removed dependency array since it's no longer a useCallback
 
+  // Currency formatter
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
       maximumFractionDigits: 0
     }).format(value);
+  };
+  
+  // Load data once when component first mounts or when tab is switched
+  // This provides initial data without automatic recalculation on every change
+  React.useEffect(() => {
+    if (!initialDataLoaded && allPaymentsWithInterest.length > 0) {
+      console.log('Loading initial data for CashFlowAnalysis');
+      const result = calculateAnalysis(allPaymentsWithInterest, projectData);
+      setAnalysisData(result);
+      setInitialDataLoaded(true);
+    }
+  }, [initialDataLoaded, allPaymentsWithInterest.length, projectData]);
+  
+  // Handle manual refresh - only recalculates metrics using existing data
+  const handleRefresh = () => {
+    console.log('Manual refresh triggered - recalculating metrics only');
+    // Use existing interest data without modifying it
+    const result = calculateAnalysis(allPaymentsWithInterest, projectData);
+    setAnalysisData(result);
+    console.log('Metrics manually refreshed at', new Date().toISOString());
   };
 
   const MetricCard: React.FC<{ title: string; value: string; icon: React.ReactNode; description?: string }> = 
@@ -147,38 +200,48 @@ export const CashFlowAnalysis: React.FC<CashFlowAnalysisProps> = ({ projectData,
 
   return (
     <div className="space-y-6 p-4 bg-gray-50 rounded-lg">
-      <h2 className="text-2xl font-semibold text-gray-700 mb-4">Project Financial Summary</h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-semibold text-gray-700">Project Financial Summary</h2>
+        <Button 
+          onClick={handleRefresh} 
+          size="sm" 
+          variant="outline" 
+          className="flex items-center gap-1">
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
         <MetricCard 
           title="Total Investment"
-          value={formatCurrency(analysisSummary.totalInvestment)}
+          value={formatCurrency(analysisData.totalInvestment)}
           icon={<Landmark className="h-5 w-5 text-blue-500" />}
           description="Principal + Interest payments"
         />
         <MetricCard 
           title="Total Returns"
-          value={formatCurrency(analysisSummary.totalReturns)}
+          value={formatCurrency(analysisData.totalReturns)}
           icon={<TrendingUp className="h-5 w-5 text-green-500" />}
           description="Total rental and sale income"
         />
         <MetricCard 
           title="Net Profit"
-          value={formatCurrency(analysisSummary.netProfit)}
+          value={formatCurrency(analysisData.netProfit)}
           icon={<Scale className="h-5 w-5 text-purple-500" />}
           description="Total Returns - Total Investment"
         />
         <MetricCard 
           title="Total Interest Paid"
-          value={formatCurrency(analysisSummary.totalInterestPaid)}
+          value={formatCurrency(analysisData.totalInterestPaid)}
           icon={<HandCoins className="h-5 w-5 text-red-500" />}
           description="Cumulative interest paid on debt"
         />
         <MetricCard 
           title="XIRR"
-          value={`${analysisSummary.xirrValue.toFixed(2)}%`}
+          value={`${analysisData.xirrValue.toFixed(2)}%`}
           icon={<Percent className="h-5 w-5 text-yellow-500" />}
-          description="Internal Rate of Return"
+          description="Time-weighted return rate"
         />
         {projectEndDate && (
           <MetricCard 

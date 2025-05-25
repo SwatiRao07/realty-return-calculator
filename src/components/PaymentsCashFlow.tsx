@@ -66,42 +66,62 @@ const PaymentsCashFlow: React.FC<PaymentsCashFlowProps> = ({
   }, [projectData.payments, projectData.rentalIncome]);
 
   const handleCalculateInterest = useCallback(() => {
+    // Validation check
     if (interestRate <= 0 && projectData.payments.length === 0) {
-      setCurrentInterestDetails({
-        newInterestPayments: [],
-        allPaymentsWithInterest: projectData.payments, 
-        finalBalance: 0
-      });
       toast({
         title: 'No Interest to Calculate',
         description: 'Interest rate is 0 or no payments exist.',
       });
       return;
     }
+    
+    console.log('Calculating interest with rate:', interestRate);
+    
+    // Calculate new interest payments
     const result = calculateMonthlyInterestLogic({
       payments: projectData.payments,
       interestRate: interestRate,
       projectEndDate: projectEndDate || undefined,
     });
-    setCurrentInterestDetails(result);
+    
     if (result.error) {
       toast({
         title: 'Interest Calculation Error',
         description: result.error,
         variant: 'destructive',
       });
-    } else {
-      toast({
-        title: 'Interest Calculated',
-        description: 'Interest details have been updated and are reflected in the table and analysis.',
-      });
+      return;
     }
-  }, [projectData.payments, interestRate, projectEndDate, toast]);
-
-  // Get all payments with interest for analysis
+    
+    // Simple approach: Remove ALL existing interest entries
+    const nonInterestPayments = projectData.payments.filter(p => p.type !== 'interest');
+    
+    // Add new interest entries (already stored as negative values)
+    const newInterestPayments = result.newInterestPayments;
+    
+    // Combine regular payments with new interest entries
+    const updatedPayments = [...nonInterestPayments, ...newInterestPayments];
+    
+    // Update both local state and parent component
+    setCurrentInterestDetails({
+      newInterestPayments,
+      allPaymentsWithInterest: updatedPayments,
+      finalBalance: result.finalBalance
+    });
+    
+    // Save to parent component state so it persists between tabs
+    updatePayments(updatedPayments);
+    
+    toast({
+      title: 'Interest Calculated',
+      description: `${newInterestPayments.length} interest entries created. All data saved.`,
+    });
+  }, [projectData.payments, interestRate, projectEndDate, toast, updatePayments]);
+  
+  // Get all payments with interest for analysis - simplified to use parent component state
   const allPaymentsWithInterest = useMemo(() => {
-    return currentInterestDetails?.allPaymentsWithInterest || projectData.payments;
-  }, [currentInterestDetails, projectData.payments]);
+    return projectData.payments;
+  }, [projectData.payments]);
 
   const allEntriesForTable: Payment[] = useMemo(() => {
     const principalPaymentsMapped: Payment[] = projectData.payments.map((p: Payment): Payment => ({

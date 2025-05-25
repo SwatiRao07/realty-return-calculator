@@ -54,9 +54,15 @@ export const calculateMonthlyInterestLogic = ({ payments, interestRate, projectE
     
     let paymentEntry: Payment | null = null;
     if (monthInterest > 0) {
-       paymentEntry = {
-        id: `int_${monthEndDate.getTime()}`,
-        amount: monthInterest,
+      // Round to 2 decimal places and store as negative (since it's an outflow)
+      const roundedInterest = parseFloat(monthInterest.toFixed(2));
+      
+      // Create a truly unique ID by combining timestamp and a random value
+      const uniqueId = `int_${monthEndDate.getTime()}_${Math.random().toString(36).substring(2, 10)}`;
+      
+      paymentEntry = {
+        id: uniqueId, // Guaranteed unique ID
+        amount: -roundedInterest, // Store as NEGATIVE with 2 decimal precision
         type: 'interest',
         date: new Date(monthEndDate), 
         month: (monthEndDate.getMonth()) + (monthEndDate.getFullYear() * 12),
@@ -137,11 +143,17 @@ export const calculateMonthlyInterestLogic = ({ payments, interestRate, projectE
       const balanceAtStartOfThisMonth = runningBalance;
       
       // Update running balance with principal changes from payments in this month
+      // IMPORTANT: payment.amount is already positive for payments, but should INCREASE the balance
+      // IMPORTANT: payment.amount is positive for returns, but should DECREASE the balance
       for (const payment of paymentsInCurrentLoopMonth) {
         if (payment.type === 'payment') {
+          // For payments, ADD the amount (increases debt/principal)
           runningBalance += payment.amount;
+          console.log(`Added payment ${payment.amount} to balance, new balance: ${runningBalance}`);
         } else if (payment.type === 'return') {
+          // For returns, SUBTRACT the amount (decreases debt/principal)
           runningBalance -= payment.amount;
+          console.log(`Subtracted return ${payment.amount} from balance, new balance: ${runningBalance}`);
         }
       }
 
@@ -152,7 +164,11 @@ export const calculateMonthlyInterestLogic = ({ payments, interestRate, projectE
         const interestDetails = calculateInterestDetailsForMonth(balanceAtStartOfThisMonth, paymentsInCurrentLoopMonth, currentMonthStart, dailyRate, monthlyRate, interestRate);
         if (interestDetails.paymentEntry) {
           newInterestPayments.push(interestDetails.paymentEntry);
+          
+          // Since interestDetails.amount is positive but interest is an outflow (like a payment),
+          // we should ADD it to the balance (increases debt/principal)
           runningBalance += interestDetails.amount; // Compound interest
+          console.log(`Added interest ${interestDetails.amount} to balance, new balance: ${runningBalance}`);
         }
       }
       currentLoopMonthDate = addMonths(currentMonthStart, 1);

@@ -7,8 +7,11 @@ export const formatCurrency = (value: number) => {
   }).format(value);
 };
 
-export const formatNumber = (value: number) => {
-  return new Intl.NumberFormat('en-IN').format(value);
+export const formatNumber = (value: number, decimals: number = 0) => {
+  return new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals
+  }).format(Math.abs(value));
 };
 
 export const parseCurrencyAmount = (amountStr: string): number => {

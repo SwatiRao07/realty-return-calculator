@@ -149,69 +149,156 @@ export const PaymentManager: React.FC<PaymentManagerProps> = ({
     });
   }, []);
 
-  // Parse CSV data and add to payments
+  // Parse CSV data and add to payments with enhanced type detection
   const parseCsvData = useCallback(() => {
     try {
       const lines = csvData.trim().split('\n');
       const newPayments: Payment[] = [];
+      const errors: string[] = [];
 
-      lines.forEach((line, index) => {
-        const [monthOrDate, amount, description = ''] = line.split(',').map(s => s.trim());
-        
-        if (!monthOrDate || !amount) return;
+      // Check if first line is a header
+      const hasHeader = lines[0].toLowerCase().includes('date') && 
+                        lines[0].toLowerCase().includes('amount') &&
+                        (lines[0].toLowerCase().includes('type') || 
+                         lines[0].toLowerCase().includes('description'));
+      
+      const dataLines = hasHeader ? lines.slice(1) : lines;
+      console.log(`Processing ${dataLines.length} data lines${hasHeader ? ' (skipping header)' : ''}`);
 
-        let month: string;
-        let date: Date;
-        
-        // Try to parse as date first
-        const parsedDate = new Date(monthOrDate);
-        if (!isNaN(parsedDate.getTime())) {
-          date = parsedDate;
-          month = dateToMonth(date);
-        } else {
-          // Try to parse as month string (e.g., "May-2024")
-          const [monthName, year] = monthOrDate.split('-');
-          if (monthName && year) {
-            const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-              .findIndex(m => m.toLowerCase() === monthName.substring(0, 3).toLowerCase());
-            if (monthIndex !== -1) {
-              date = new Date(parseInt(year), monthIndex, 1);
-              month = dateToMonth(date);
+      dataLines.forEach((line, index) => {
+        if (!line.trim()) return; // Skip empty lines
+
+        try {
+          // Support both 3-column (Date,Amount,Description) and 4-column (Date,Type,Amount,Description) formats
+          const parts = line.split(',').map(s => s.trim());
+          let dateStr, typeStr, amountStr, descriptionStr;
+          
+          if (parts.length >= 4) {
+            // Format: Date,Type,Amount,Description
+            [dateStr, typeStr, amountStr, descriptionStr] = parts;
+          } else if (parts.length >= 3) {
+            // Format: Date,Amount,Description
+            [dateStr, amountStr, descriptionStr] = parts;
+            // Will determine type from amount sign
+            typeStr = '';
+          } else {
+            errors.push(`Line ${index + 1}: Not enough columns (expected at least Date,Amount,Description)`);
+            return;
+          }
+
+          if (!dateStr || !amountStr) {
+            errors.push(`Line ${index + 1}: Missing required date or amount`);
+            return;
+          }
+
+          // Parse date
+          let date: Date;
+          let month: number;
+          
+          // Try parsing as ISO date first (YYYY-MM-DD)
+          date = new Date(dateStr);
+          
+          if (isNaN(date.getTime())) {
+            // Try parsing as Month-Year format (MMM-YYYY)
+            const [monthName, year] = dateStr.split('-');
+            if (monthName && year) {
+              const monthIndex = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                .findIndex(m => m.toLowerCase() === monthName.substring(0, 3).toLowerCase());
+              
+              if (monthIndex !== -1) {
+                date = new Date(parseInt(year), monthIndex, 1);
+              } else {
+                errors.push(`Line ${index + 1}: Invalid month format '${monthName}'`);
+                return;
+              }
             } else {
-              throw new Error(`Invalid date/month format at line ${index + 1}`);
+              errors.push(`Line ${index + 1}: Could not parse date '${dateStr}'`);
+              return;
+            }
+          }
+          
+          month = dateToMonth(date);
+
+          // Parse amount (remove currency symbols, commas, etc.)
+          const amountValue = parseFloat(amountStr.replace(/[^0-9.-]+/g, ''));
+          if (isNaN(amountValue)) {
+            errors.push(`Line ${index + 1}: Invalid amount '${amountStr}'`);
+            return;
+          }
+
+          // Determine payment type (with better handling)
+          let type: 'payment' | 'return' | 'interest' = 'payment';
+          
+          if (typeStr) {
+            // Explicit type provided
+            const normalizedType = typeStr.toLowerCase().trim();
+            if (normalizedType.includes('payment') || normalizedType.includes('invest')) {
+              type = 'payment';
+            } else if (normalizedType.includes('return') || normalizedType.includes('income') || 
+                       normalizedType.includes('sale') || normalizedType.includes('rental')) {
+              type = 'return';
+            } else if (normalizedType.includes('interest')) {
+              type = 'interest';
+            } else {
+              // Fallback to amount sign
+              type = amountValue < 0 ? 'payment' : 'return';
             }
           } else {
-            throw new Error(`Invalid date/month format at line ${index + 1}`);
+            // Determine by amount sign
+            type = amountValue < 0 ? 'payment' : 'return';
           }
+
+          // Create payment object
+          newPayments.push({
+            id: `imported-${Date.now()}-${index}`,
+            month,
+            amount: Math.abs(amountValue),
+            description: descriptionStr || `Imported ${type} ${index + 1}`,
+            date: date.toISOString(),
+            type,
+          });
+        } catch (lineError) {
+          errors.push(`Line ${index + 1}: ${lineError instanceof Error ? lineError.message : 'Unknown error'}`);
         }
-
-        // Parse amount (remove any currency symbols and commas)
-        const amountValue = parseFloat(amount.replace(/[^0-9.-]+/g, ''));
-        if (isNaN(amountValue)) {
-          throw new Error(`Invalid amount at line ${index + 1}`);
-        }
-
-        // Determine type based on amount sign (negative = payment, positive = return)
-        const type: 'payment' | 'return' = amountValue < 0 ? 'payment' : 'return';
-
-        newPayments.push({
-          id: `imported-${Date.now()}-${index}`,
-          month,
-          amount: Math.abs(amountValue),
-          description: description || `Imported payment ${index + 1}`,
-          date: date || monthToMonth(month),
-          type,
-        });
       });
 
+      // Report results
       if (newPayments.length > 0) {
         // Update payments without triggering analysis
         updatePayments([...projectData.payments, ...newPayments]);
         setCsvData('');
         setIsImportOpen(false);
+        
+        // Create summary by type
+        const typeCount = newPayments.reduce((acc, p) => {
+          acc[p.type] = (acc[p.type] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>);
+        
+        const summary = Object.entries(typeCount)
+          .map(([type, count]) => `${count} ${type}${count !== 1 ? 's' : ''}`)
+          .join(', ');
+        
         toast({
           title: 'Import Successful',
-          description: `Successfully imported ${newPayments.length} payment(s). Click 'Refresh' in the Analysis tab to update metrics.`,
+          description: `Successfully imported ${newPayments.length} entries (${summary}). ${errors.length > 0 ? `${errors.length} line(s) had errors.` : ''} Click 'Calculate Interest' to update interest calculations.`,
+        });
+        
+        // Log errors if any
+        if (errors.length > 0) {
+          console.warn('CSV import had some errors:', errors);
+        }
+      } else if (errors.length > 0) {
+        toast({
+          title: 'Import Failed',
+          description: `No entries imported. ${errors.length} ${errors.length === 1 ? 'error' : 'errors'} found.`,
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'No Data',
+          description: 'No valid entries found in the CSV data',
+          variant: 'destructive',
         });
       }
     } catch (error) {
@@ -344,29 +431,65 @@ export const PaymentManager: React.FC<PaymentManagerProps> = ({
         />
       </div>
 
-      {/* Import Modal - You'll need to implement this or keep from original */}
+      {/* Enhanced Import Modal with better instructions */}
       {isImportOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setIsImportOpen(false)}>
-          <div className="relative max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="relative max-w-lg w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <Card className="border-blue-200 shadow-lg">
-              <CardContent className="p-4">
-                <h3 className="text-lg font-medium mb-2">Import CSV</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Paste your CSV data here. Format: Month,Amount,Description
-                </p>
-                <textarea
-                  className="w-full p-2 border rounded mb-2 h-32"
-                  value={csvData}
-                  onChange={(e) => setCsvData(e.target.value)}
-                  placeholder="May-2024,-1000000,Initial payment"
-                />
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsImportOpen(false)}>
-                    Cancel
+              <CardContent className="p-6">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-medium">Import Cash Flow Entries</h3>
+                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setIsImportOpen(false)}>
+                    <X className="h-4 w-4" />
                   </Button>
-                  <Button onClick={parseCsvData}>
-                    Import
-                  </Button>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-sm font-medium mb-1">Supported Formats:</h4>
+                    <ul className="text-xs text-gray-600 list-disc pl-5 space-y-1">
+                      <li><code>Date,Amount,Description</code> - Type determined by amount sign</li>
+                      <li><code>Date,Type,Amount,Description</code> - Explicit type</li>
+                      <li>Headers are automatically detected and skipped</li>
+                    </ul>
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-sm font-medium mb-1">Examples:</h4>
+                    <pre className="text-xs bg-gray-50 p-2 rounded border overflow-x-auto">
+{`2025-01-01,-1000000,Initial investment
+2025-06-30,50000,Monthly rental income
+2025-12-31,1200000,Property sale
+Date,Type,Amount,Description
+2025-01-01,Payment,1000000,Initial investment
+2025-02-01,Interest,10000,February interest`}
+                    </pre>
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="csv-import" className="block text-sm font-medium mb-1">Paste your CSV data here:</label>
+                    <textarea
+                      id="csv-import"
+                      className="w-full p-3 border rounded-md mb-2 h-40 font-mono text-sm"
+                      value={csvData}
+                      onChange={(e) => setCsvData(e.target.value)}
+                      placeholder="Date,Amount,Description"
+                    />
+                  </div>
+                  
+                  <div className="flex justify-end gap-3 pt-2">
+                    <Button variant="outline" onClick={() => setIsImportOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={parseCsvData}
+                      disabled={!csvData.trim()}
+                      className="bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import Data
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

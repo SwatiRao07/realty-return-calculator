@@ -75,22 +75,33 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
 
   // Calculate running balance for each payment
   const calculateRunningBalances = () => {
-    let balance = 0;
+    if (!payments.length) return [];
+    
     const sortedPayments = [...payments].sort((a, b) => {
       const dateA = a.date ? new Date(a.date).getTime() : monthToDate(a.month).getTime();
       const dateB = b.date ? new Date(b.date).getTime() : monthToDate(b.month).getTime();
+      if (dateA === dateB) {
+        // If dates are the same, prioritize based on type
+        const typeOrder: Record<string, number> = { payment: 1, interest: 2, return: 3 };
+        return (typeOrder[a.type as string] || 0) - (typeOrder[b.type as string] || 0);
+      }
       return dateA - dateB;
     });
 
+    let runningBalance = 0;
     return sortedPayments.map(payment => {
+      // For running balance calculation:
+      // - Payments INCREASE the principal (add as positive)
+      // - Returns DECREASE the principal (subtract as positive)
+      // - Interest INCREASES the principal (always treat as positive)
       if (payment.type === 'payment') {
-        balance += payment.amount; // Payments increase loan balance (positive)
+        runningBalance += Math.abs(payment.amount);
       } else if (payment.type === 'return') {
-        balance -= payment.amount; // Returns decrease loan balance (negative)
+        runningBalance -= Math.abs(payment.amount);
       } else if (payment.type === 'interest') {
-        balance += payment.amount; // Interest increases loan balance
+        runningBalance += Math.abs(payment.amount); // Always add interest as positive
       }
-      return { ...payment, balance };
+      return { ...payment, balance: runningBalance };
     });
   };
 
@@ -192,7 +203,12 @@ export const PaymentsTable: React.FC<PaymentsTableProps> = ({
                     />
                   ) : (
                     <span className={`text-sm ${(payment.type as PaymentType) === 'return' ? 'text-green-600' : (payment.type as PaymentType) === 'interest' ? 'text-purple-600' : 'text-red-600'}`}>
-                      {(payment.type as PaymentType) === 'return' ? '+' : (payment.type as PaymentType) === 'interest' ? '' : '-'}{formatNumber(payment.amount)}
+                      {/* Only returns should be shown as positive */}
+                      {(payment.type as PaymentType) === 'return' ? '+' : '-'}
+                      {/* For all types, show absolute value */}
+                      {(payment.type as PaymentType) === 'interest' 
+                        ? formatNumber(Math.abs(payment.amount), 2) /* Use 2 decimal places for interest */
+                        : formatNumber(Math.abs(payment.amount))}
                     </span>
                   )}
                 </TableCell>
