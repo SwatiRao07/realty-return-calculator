@@ -11,6 +11,14 @@ const Index = () => {
   const [projectData, setProjectData] = useState<ProjectData>({
     projectName: 'New Project',
     annualInterestRate: 12, // 12% annual interest rate
+    purchasePrice: 0,
+    closingCosts: 0,
+    renovationCosts: 0,
+    salePrice: 0,
+    saleMonth: 12,
+    sellingCosts: 0,
+    monthlyInterestRate: 1, // 1% monthly interest rate
+    discountRate: 10, // 10% discount rate
     payments: [],
     rentalIncome: [],
     operatingExpenses: []
