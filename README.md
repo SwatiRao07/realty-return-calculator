@@ -71,6 +71,7 @@ To run this project locally, follow these steps:
 2.  **Install dependencies:**
     ```sh
     npm install
+    npm install xirr
     ```
     Or if you prefer yarn:
     ```sh
