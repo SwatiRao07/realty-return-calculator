@@ -5,7 +5,6 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Button } from '@/components/ui/button';
 import PaymentsCashFlow from '@/components/PaymentsCashFlow';
 import { FinancialMetrics } from '@/components/FinancialMetrics';
-import { AnalysisSetup } from '@/components/AnalysisSetup';
 import { ProjectManager } from '@/components/ProjectManager';
 import FirestoreTest from '@/components/FirestoreTest';
 import HistoryViewer from '@/components/HistoryViewer';
@@ -16,11 +15,8 @@ import { TrendingUp, BarChart3, Save, FileUp, Upload } from 'lucide-react';
 import { OperationType, OperationMetadata } from '@/types/history';
 
 const Index = () => {
-  const { isRecording, recordOperation } = useHistory();
+  const { isRecording, recordHistoryOperation } = useHistory();
   
-  // Add state to control the import dialog
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
-
   const [projectData, setProjectData] = useState<ProjectData>({
     projectName: 'New Project',
     annualInterestRate: 12, // 12% annual interest rate
@@ -58,7 +54,7 @@ const Index = () => {
             newValue: value
           }));
         
-        recordHistoryOp(
+        recordOperation(
           'project_settings_changed',
           {
             timestamp: new Date(),
@@ -82,7 +78,7 @@ const Index = () => {
       // Only record major payment changes
       // We don't want to record every small edit
       if (Math.abs(payments.length - prev.payments.length) > 0) {
-        recordHistoryOp(
+        recordOperation(
           payments.length > prev.payments.length ? 'payment_added' : 'payment_deleted',
           {
             timestamp: new Date(),
@@ -102,14 +98,9 @@ const Index = () => {
   };
   
   // Record keeping for history
-  const recordHistoryOp = (type: OperationType, metadata: Partial<OperationMetadata>, snapshot?: Partial<ProjectData>) => {
+  const recordOperation = (type: OperationType, metadata: Partial<OperationMetadata>, snapshot?: Partial<ProjectData>) => {
     if (isRecording) {
-      // Ensure metadata has a timestamp which is required by OperationMetadata
-      const fullMetadata = {
-        timestamp: new Date(),
-        ...metadata
-      };
-      recordOperation(type, fullMetadata as OperationMetadata, snapshot);
+      recordHistoryOperation(type, metadata, snapshot);
     }
   };
   
@@ -130,7 +121,7 @@ const Index = () => {
       };
       
       // Record this operation
-      recordHistoryOp(
+      recordOperation(
         'csv_imported',
         {
           timestamp: new Date(),
@@ -147,11 +138,6 @@ const Index = () => {
         },
         newData
       );
-
-      // Close the import dialog after successful import
-      setTimeout(() => {
-        setImportDialogOpen(false);
-      }, 500);
       
       return newData;
     });
@@ -253,7 +239,7 @@ const Index = () => {
               <HistoryViewer 
                 onRestoreState={handleRestoreFromHistory} 
               />
-              <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+              <Dialog>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm" className="flex items-center gap-2">
                     <Upload className="w-4 h-4" />
@@ -317,19 +303,10 @@ const Index = () => {
               
               <Card className="shadow-sm border-gray-200">
                 <CardHeader>
-                  <CardTitle className="text-xl">Project Analysis & Setup</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <AnalysisSetup projectData={projectData} updateProjectData={updateProjectData} />
-                </CardContent>
-              </Card>
-              
-              <Card className="shadow-sm border-gray-200">
-                <CardHeader>
                   <CardTitle className="text-xl">Financial Analysis</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <FinancialMetrics projectData={projectData} updateProjectData={updateProjectData} />
+                  <FinancialMetrics projectData={projectData} />
                 </CardContent>
               </Card>
             </div>

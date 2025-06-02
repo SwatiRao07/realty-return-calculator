@@ -25,6 +25,7 @@ export interface ExpenseItem {
 }
 
 export interface ProjectData {
+  id?: string;
   projectName: string;
   annualInterestRate: number; // Annual interest rate as a percentage (e.g., 12 for 12%)
   purchasePrice: number;
@@ -38,6 +39,9 @@ export interface ProjectData {
   payments: Payment[];
   rentalIncome: IncomeItem[];
   operatingExpenses: ExpenseItem[];
+  createdAt?: Date | any; // For Firestore timestamp
+  updatedAt?: Date | any; // For Firestore timestamp
+  userId?: string; // To associate projects with users
 }
 
 export interface CashFlowRow {
