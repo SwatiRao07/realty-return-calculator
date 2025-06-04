@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AITextImporter } from './AITextImporter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,7 +7,8 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Download, Upload, FileText, Table, FileSpreadsheet, AlertCircle, File, FileJson } from 'lucide-react';
+import { Upload, FileText, Table, FileSpreadsheet, AlertCircle, File, Wand2, AlertCircle as AlertCircleIcon } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import * as XLSX from 'xlsx';
 import { Payment } from '@/types/project';
 // We'll use dynamic imports for PDF and DOCX libraries to avoid build issues
@@ -16,13 +18,111 @@ interface FileImporterProps {
   onDataImported: (data: Payment[]) => void;
 }
 
-export const FileImporter: React.FC<FileImporterProps> = ({ onDataImported }) => {
+const FileImporter: React.FC<FileImporterProps> = ({ onDataImported }) => {
+  const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [fileType, setFileType] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
-  const { toast } = useToast();
+  const [showAIImporter, setShowAIImporter] = useState(false);
+  const [manualData, setManualData] = useState('');
+  
+  // Handle file import - implementation moved below to combine with the more complete version
+  
+  // Handle manual data submission
+  const handleManualSubmit = () => {
+    try {
+      const data = manualData.split('\n').filter(Boolean);
+      if (data.length < 2) {
+        throw new Error('Please enter data in CSV format with headers');
+      }
+      
+      const headers = data[0].split(',').map(h => h.trim().toLowerCase());
+      const jsonData = data.slice(1).map(line => {
+        const values = line.split(',').map(v => v.trim());
+        return headers.reduce((obj, header, i) => ({
+          ...obj,
+          [header]: values[i] || ''
+        }), {});
+      });
+      
+      setPreviewData(jsonData);
+      setFileType('csv');
+      setFileName('manual-import.csv');
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to parse manual data',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Handle CSV data from AI Importer
+  const handleAICSVData = (csvData: string) => {
+    try {
+      console.log('Raw AI CSV Data:', csvData); // Debug log
+      
+      // Parse the CSV data
+      const lines = csvData.split('\n').filter(line => line.trim() !== '');
+      if (lines.length < 2) {
+        throw new Error('No data found in the CSV');
+      }
+      
+      // Extract headers and ensure they're in lowercase
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      console.log('CSV Headers:', headers); // Debug log
+      
+      const data = [];
+      
+      // Process each line of data
+      for (let i = 1; i < lines.length; i++) {
+        if (!lines[i].trim()) continue;
+        
+        // Handle CSV values that might contain commas within quotes
+        const values = lines[i].match(/\s*("[^"]*"|[^,]+)\s*(?:,|$)/g) || [];
+        const cleanValues = values.map(v => v.replace(/,$/, '').trim().replace(/^"|"$/g, ''));
+        
+        const item: any = {};
+        
+        // Map values to headers
+        for (let j = 0; j < headers.length; j++) {
+          if (cleanValues[j] !== undefined) {
+            item[headers[j]] = cleanValues[j].trim();
+          }
+        }
+        
+        // Ensure required fields exist
+        if (item.date || item.amount) {
+          data.push(item);
+        }
+      }
+      
+      console.log('Parsed AI Data:', data); // Debug log
+      
+      if (data.length === 0) {
+        throw new Error('No valid payment data found in the CSV');
+      }
+      
+      setPreviewData(data);
+      setFileType('csv');
+      setFileName('ai-import.csv');
+      setShowAIImporter(false);
+      
+      toast({
+        title: 'Success',
+        description: `Successfully parsed ${data.length} records from AI import.`,
+      });
+    } catch (error) {
+      console.error('Error parsing AI-generated CSV:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to parse AI-generated data. Please check the format.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // Process Excel files (XLSX, XLS)
   const processExcelFile = (file: File): Promise<any[]> => {
@@ -519,36 +619,99 @@ export const FileImporter: React.FC<FileImporterProps> = ({ onDataImported }) =>
   };
 
   return (
-    <Card className="w-full">
-      <CardHeader>
-        <CardTitle className="text-xl flex items-center gap-2">
-          <Upload className="w-5 h-5" />
-          Import Data
-        </CardTitle>
-        <CardDescription>
-          Import data from Excel, CSV, PDF, or Word documents
-        </CardDescription>
-      </CardHeader>
-      
-      <CardContent>
-        <div className="space-y-4">
-          <div className="flex flex-col space-y-2">
-            <Label htmlFor="file-upload">Select file to import</Label>
-            <Input
-              id="file-upload"
-              type="file"
-              disabled={isLoading}
-              onChange={handleFileChange}
-              accept=".xlsx,.xls,.csv,.pdf,.doc,.docx"
-              className="cursor-pointer"
+    <div className="w-full">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Upload className="w-5 h-5" />
+            Import Data
+          </CardTitle>
+          <CardDescription>
+            Import data from Excel, CSV, PDF, or Word documents
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          <Tabs defaultValue="file" className="w-full">
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="file">
+                <File className="w-4 h-4 mr-2" /> File Upload
+              </TabsTrigger>
+              <TabsTrigger value="ai">
+                <Wand2 className="w-4 h-4 mr-2" /> AI Import
+              </TabsTrigger>
+              <TabsTrigger value="manual">
+                <Table className="w-4 h-4 mr-2" /> Manual Entry
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="file" className="space-y-4 mt-4">
+              <div className="flex flex-col space-y-2">
+                <Label htmlFor="file-upload">Select file to import</Label>
+                <Input
+                  id="file-upload"
+                  type="file"
+                  disabled={isLoading}
+                  onChange={handleFileChange}
+                  accept=".xlsx,.xls,.csv,.pdf,.doc,.docx"
+                  className="cursor-pointer"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Supported formats: Excel (.xlsx, .xls), CSV, PDF, Word (.doc, .docx)
+                </p>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="ai" className="space-y-4 mt-4">
+              <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg bg-muted/20">
+                <Wand2 className="w-12 h-12 mb-4 text-primary" />
+                <h3 className="text-lg font-medium mb-2">AI-Powered Text Import</h3>
+                <p className="text-sm text-muted-foreground text-center mb-6 max-w-md">
+                  Convert any text containing payment information into structured data using AI.
+                  The AI will automatically detect dates, amounts, and descriptions.
+                </p>
+                <Button 
+                  onClick={() => setShowAIImporter(true)}
+                  className="gap-2"
+                >
+                  <Wand2 className="w-4 h-4" /> Open AI Text Importer
+                </Button>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="manual" className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <Label htmlFor="manualData">Enter your data (CSV format):</Label>
+                <Textarea
+                  id="manualData"
+                  placeholder="date,amount,description\n2025-01-01,1000,Initial investment\n2025-02-01,500,Additional investment"
+                  className="min-h-[200px] font-mono text-xs"
+                  value={manualData}
+                  onChange={(e) => setManualData(e.target.value)}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Enter data in CSV format with headers: date, amount, description
+                </p>
+                <Button 
+                  onClick={handleManualSubmit}
+                  disabled={!manualData.trim()}
+                  className="w-full mt-2"
+                >
+                  Import Manual Data
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
+          
+          {showAIImporter && (
+            <AITextImporter 
+              onImport={handleAICSVData} 
+              onClose={() => setShowAIImporter(false)} 
             />
-            <p className="text-xs text-gray-500">
-              Supported formats: Excel (.xlsx, .xls), CSV, PDF, Word (.doc, .docx)
-            </p>
-          </div>
+          )}
           
           {error && (
-            <Alert variant="destructive">
+            <Alert variant="destructive" className="mt-4">
               <AlertCircle className="h-4 w-4" />
               <AlertTitle>Error</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
@@ -560,66 +723,116 @@ export const FileImporter: React.FC<FileImporterProps> = ({ onDataImported }) =>
               <h3 className="font-medium mb-2 flex items-center gap-2">
                 {fileType === 'csv' && <FileText className="w-4 h-4" />}
                 {(fileType === 'xlsx' || fileType === 'xls') && <FileSpreadsheet className="w-4 h-4" />}
+                {fileType === 'pdf' && <File className="w-4 h-4" />}
+                {fileType === 'docx' && <FileText className="w-4 h-4" />}
                 {fileName} - Preview ({previewData.length} records)
               </h3>
               
-              <div className="border rounded-md max-h-[300px] overflow-auto">
+              <div className="border rounded-md max-h-[400px] overflow-auto mt-2">
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-muted sticky top-0">
                     <tr>
                       {Object.keys(previewData[0]).map((key) => (
-                        <th key={key} className="px-4 py-2 text-left font-medium text-gray-500">
-                          {key}
+                        <th 
+                          key={key} 
+                          className="px-4 py-2 text-left font-medium text-muted-foreground bg-muted"
+                        >
+                          {key.charAt(0).toUpperCase() + key.slice(1)}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {previewData.slice(0, 10).map((row, rowIndex) => (
-                      <tr key={rowIndex} className={rowIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                        {Object.values(row).map((value: any, colIndex) => (
-                          <td key={colIndex} className="px-4 py-2 text-gray-700">
-                            {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
+                    {previewData.slice(0, 20).map((row, rowIndex) => {
+                      // Format amount with proper currency and sign
+                      const formattedRow = { ...row };
+                      if ('amount' in formattedRow) {
+                        const amount = parseFloat(formattedRow.amount);
+                        if (!isNaN(amount)) {
+                          formattedRow.amount = new Intl.NumberFormat('en-IN', {
+                            style: 'currency',
+                            currency: 'INR',
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 0
+                          }).format(Math.abs(amount));
+                          
+                          // Add minus sign for negative amounts
+                          if (amount < 0) {
+                            formattedRow.amount = `-${formattedRow.amount}`;
+                          }
+                        }
+                      }
+                      
+                      // Format date if present
+                      if ('date' in formattedRow && formattedRow.date) {
+                        try {
+                          const date = new Date(formattedRow.date);
+                          if (!isNaN(date.getTime())) {
+                            formattedRow.date = date.toLocaleDateString('en-IN', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric'
+                            });
+                          }
+                        } catch (e) {
+                          // Keep original date if parsing fails
+                        }
+                      }
+                      
+                      return (
+                        <tr 
+                          key={rowIndex} 
+                          className={`${rowIndex % 2 === 0 ? 'bg-background' : 'bg-muted/30'} hover:bg-muted/50`}
+                        >
+                          {Object.entries(formattedRow).map(([key, value], colIndex) => (
+                            <td 
+                              key={`${rowIndex}-${colIndex}`} 
+                              className={`px-4 py-2 ${key === 'amount' ? 'font-medium' : ''} ${
+                                typeof value === 'string' && value.startsWith('-') ? 'text-destructive' : ''
+                              }`}
+                            >
+                              {String(value)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-                
-                {previewData.length > 10 && (
-                  <div className="p-2 text-center text-sm text-gray-500">
-                    Showing 10 of {previewData.length} records
+                {previewData.length > 20 && (
+                  <div className="text-xs text-muted-foreground p-2 text-center border-t bg-muted/25 sticky bottom-0">
+                    Showing first 20 of {previewData.length} records. Import to see all records.
                   </div>
                 )}
               </div>
             </div>
           )}
-        </div>
-      </CardContent>
-      
-      <CardFooter className="flex justify-end gap-2">
-        <Button
-          variant="outline"
-          onClick={() => {
-            setPreviewData([]);
-            setFileType(null);
-            setFileName(null);
-            setError(null);
-          }}
-          disabled={isLoading || previewData.length === 0}
-        >
-          Cancel
-        </Button>
-        <Button
-          onClick={handleImport}
-          disabled={isLoading || previewData.length === 0}
-        >
-          <Table className="w-4 h-4 mr-2" />
-          Import Data
-        </Button>
-      </CardFooter>
-    </Card>
+
+          <CardFooter className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setPreviewData([]);
+                setFileType(null);
+                setFileName(null);
+                setError(null);
+                setManualData('');
+              }}
+              disabled={isLoading || (previewData.length === 0 && !manualData)}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImport}
+              disabled={isLoading || previewData.length === 0}
+            >
+              <Table className="w-4 h-4 mr-2" />
+              Import Data
+            </Button>
+          </CardFooter>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 
